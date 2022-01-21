@@ -1,0 +1,20 @@
+domain: acm-manager.io
+layout:
+- go.kubebuilder.io/v3
+projectName: acm-manager
+repo: vdesjardins/acm-manager
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: acm-manager.io
+  kind: Certificate
+  path: vdesjardins/acm-manager/pkg/api/v1alpha1
+  version: v1alpha1
+- controller: true
+  domain: acm-manager.io
+  group: networking.k8s.io
+  kind: Ingress
+  version: v1
+version: "3"

@@ -1,0 +1,8 @@
+apiVersion: acm-manager.io/v1alpha1
+kind: Certificate
+metadata:
+  name: certificate-sample
+spec:
+  commonName: endpoint-test.acm-manager.kubestack.io
+  subjectAlternativeNames:
+    - endpoint-test.acm-manager.kubestack.io

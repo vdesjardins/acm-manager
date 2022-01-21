@@ -1,0 +1,193 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "acm-manager.fullname" . }}-leader-election-role
+  labels:
+    {{- include "acm-manager.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "acm-manager.fullname" . }}-manager-role
+  labels:
+    {{- include "acm-manager.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - acm-manager.io
+  resources:
+  - certificates
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - acm-manager.io
+  resources:
+  - certificates/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - acm-manager.io
+  resources:
+  - certificates/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - externaldns.k8s.io
+  resources:
+  - dnsendpoints
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "acm-manager.fullname" . }}-metric-reader
+  labels:
+    {{- include "acm-manager.labels" . | nindent 4 }}
+rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "acm-manager.fullname" . }}-proxy-role
+  labels:
+    {{- include "acm-manager.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "acm-manager.fullname" . }}-leader-election-rolebinding
+  labels:
+    {{- include "acm-manager.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "acm-manager.fullname" . }}-leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: {{ include "acm-manager.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "acm-manager.fullname" . }}-manager-rolebinding
+  labels:
+    {{- include "acm-manager.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "acm-manager.fullname" . }}-manager-role
+subjects:
+- kind: ServiceAccount
+  name: {{ include "acm-manager.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "acm-manager.fullname" . }}-proxy-rolebinding
+  labels:
+    {{- include "acm-manager.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "acm-manager.fullname" . }}-proxy-role
+subjects:
+- kind: ServiceAccount
+  name: {{ include "acm-manager.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "acm-manager.fullname" . }}-controller-manager-metrics-service
+  labels:
+    {{- include "acm-manager.labels" . | nindent 4 }}
+spec:
+  ports:
+  - name: https
+    port: 8443
+    protocol: TCP
+    targetPort: https
+  selector:
+    control-plane: controller-manager

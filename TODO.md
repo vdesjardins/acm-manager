@@ -1,0 +1,4 @@
+- check resiliency if an ACM certificate is deleted outside the controller. it should be created back after full reconciliation or restart of the controller
+- test: certificate update (dns has changed)
+- test: need to verify that on update the status fields are cleared (notBefore, notAfter, status, dnsrecords)
+- test: ingress is updated only when the arn annotation is not set or that the certificate is ready (issued)
