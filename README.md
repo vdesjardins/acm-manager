@@ -90,7 +90,13 @@ An example of policy to use that will give required access to ACM:
 ```
 
 ## Installation
-A helm chart is provided in the ./charts directory. The E2E tests can also be an inspiration on how this controller can be configured.
+
+To install acm-manager using Helm:
+
+```bash
+helm repo add acm-manager https://vdesjardins.github.io/acm-manager
+helm install acm-manager/acm-manager --generate-name
+```
 
 # Usage
 There is two ways you can use this controller: from an Ingress resource or with the Certificate custom resource definition (CRD).
