@@ -18,5 +18,6 @@ mkShell {
     gnumake
     jq
     envsubst
+    chart-testing
   ];
 }
