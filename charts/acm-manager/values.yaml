@@ -15,9 +15,8 @@ nameOverride: ""
 fullnameOverride: ""
 
 # Specify if the controller will create certificate requests on ingress based only on
-# these annotations:
-# - kubernetes.io/ingress.class: alb
-# - alb.ingress.kubernetes.io/scheme: internet-facing
+# the annotations alb.ingress.kubernetes.io/scheme equals to internet-facing
+# and that spec.IngressClassName equals 'alb'
 ingressAutoDetect: true
 
 serviceAccount:

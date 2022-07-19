@@ -105,7 +105,7 @@ There is two ways you can use this controller: from an Ingress resource or with 
 This controller watches Ingress resource to create *Certificate* CRD automatically if:
 - there is the annotation *acm-manager.io/enable* equals to *yes* or *true*
 - OR
-- the annotation *kubernetes.io/ingress.class* equals to *alb* AND *alb.ingress.kubernetes.io/scheme* equals to *internet-facing*. This behavior can be disabled with the startup parameter *ingress-auto-detect*.
+- the Ingress field *spec.ingressClassName* equals to *alb* AND *alb.ingress.kubernetes.io/scheme* equals to *internet-facing*. This behavior can be disabled with the startup parameter *ingress-auto-detect*.
 
 Upon creation of the Ingress resource the controller will retreive entries in the *spec.tls* section and provision a Certificate CRD to start the ACM certificate request. *If* the Ingress *spec.tls* section specifies the *secretName* field these hosts will not be added to the ACM certificate request.
 
