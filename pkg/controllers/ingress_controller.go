@@ -33,7 +33,6 @@ import (
 )
 
 const (
-	IngressClassKey          = "kubernetes.io/ingress.class"
 	IngressClassValue        = "alb"
 	IngressSchemeKey         = "alb.ingress.kubernetes.io/scheme"
 	IngressSchemeValue       = "internet-facing"
@@ -169,7 +168,7 @@ func isIngressShouldCreateCert(ingress *networkingv1.Ingress) bool {
 		return false
 	}
 
-	if IngressAutoDetect == true && ingress.GetAnnotations()[IngressClassKey] == IngressClassValue &&
+	if IngressAutoDetect == true && ingress.Spec.IngressClassName != nil && *ingress.Spec.IngressClassName == IngressClassValue &&
 		ingress.GetAnnotations()[IngressSchemeKey] == IngressSchemeValue {
 		return true
 	}
