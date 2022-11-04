@@ -3,7 +3,7 @@
 
   inputs =
     {
-      nixpkgs.url = "github:nixos/nixpkgs/release-21.11";
+      nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
       flake-utils.url = "github:numtide/flake-utils";
     };
 
@@ -24,7 +24,7 @@
           legacyPackages = pkgs;
           inherit (pkgs) devShell;
         }) // {
-      overlay = final: prev: (nixpkgs.lib.composeManyExtensions overlays) final prev;
+      overlay = nixpkgs.lib.composeManyExtensions overlays;
       inherit overlays;
     };
 }
