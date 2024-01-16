@@ -26,16 +26,5 @@ jobs:
 
       - name: Controller Test
         run: |
-          os=$(go env GOOS)
-          arch=$(go env GOARCH)
-          K8S_VERSION=1.26.6
-          tools_path=/tmp/kubebuilder
-          # download kubebuilder and extract it to tmp
-          mkdir -p ${tools_path}
-          curl -sLo ${tools_path}/kubebuilder https://github.com/kubernetes-sigs/kubebuilder/releases/download/v3.2.0/kubebuilder_${os}_${arch}
-          chmod +x ${tools_path}/kubebuilder
-          curl -sLo ${tools_path}/envtest-bins.tar.gz "https://go.kubebuilder.io/test-tools/${K8S_VERSION}/${os}/${arch}"
-          tar -C "${tools_path}" --strip-components=1 -zvxf "${tools_path}/envtest-bins.tar.gz"
-          export PATH=${tools_path}/bin:$PATH
           # run test
-          make test SKIP_FETCH_TOOLS=1 KUBEBUILDER_ASSETS=${tools_path}/bin
+          make test
