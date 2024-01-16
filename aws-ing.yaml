@@ -1,0 +1,56 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    acm-manager: "true"
+    alb.ingress.kubernetes.io/actions.nlb-health-check-rule: '{"type":"fixed-response","fixedResponseConfig":{"contentType":"text/plain","statusCode":"200"}}'
+    alb.ingress.kubernetes.io/backend-protocol: HTTPS
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ca-central-1:491707178404:certificate/2e68aa88-c7ba-49ad-8e2f-99db378d6a32
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}, {"HTTP":80}]'
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-FS-1-2-2019-08
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/target-type: ip
+  name: vince-test
+  namespace: default
+spec:
+  defaultBackend:
+    service:
+      name: default-rule
+      port:
+        name: use-annotation
+  ingressClassName: alb
+  rules:
+  - http:
+      paths:
+      - backend:
+          service:
+            name: nlb-health-check-rule
+            port:
+              name: use-annotation
+        path: /nlb-health-check
+        pathType: Exact
+  - host: vince-ingress.sbx-vincent-desjardins.labbeneva.ca
+    http:
+      paths:
+      - backend:
+          service:
+            name: gateway-ext-default
+            port:
+              number: 443
+        path: /
+        pathType: Prefix
+  - host: vince-ingress-3.sbx-vincent-desjardins.labbeneva.ca
+    http:
+      paths:
+      - backend:
+          service:
+            name: gateway-ext-default
+            port:
+              number: 443
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - vince-ingress.sbx-vincent-desjardins.labbeneva.ca
+    - vince-ingress-3.sbx-vincent-desjardins.labbeneva.ca
