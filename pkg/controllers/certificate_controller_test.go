@@ -20,7 +20,7 @@ import (
 	"context"
 	"time"
 
-	certificatev1alpha1 "vdesjardins/acm-manager/pkg/api/v1alpha1"
+	certificatev1alpha1 "vdesjardins/acm-manager/pkg/apis/acmmanager/v1alpha1"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/acm"
@@ -79,7 +79,6 @@ func (a *acmClientMock) ListTagsForCertificate(ctx context.Context, params *acm.
 }
 
 var _ = Describe("Certificate controller", func() {
-
 	const (
 		timeout  = time.Second * 10
 		duration = time.Second * 10
@@ -156,10 +155,7 @@ var _ = Describe("Certificate controller", func() {
 			By("By checking that resource records are set")
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, endpointLookupKey, createdEndpoint)
-				if err != nil {
-					return false
-				}
-				return true
+				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
 			Expect(createdEndpoint.Spec.Endpoints[0].DNSName).Should(Equal("dns.validation.key"))

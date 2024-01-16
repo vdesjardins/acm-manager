@@ -24,10 +24,13 @@ import (
 
 	clientv1alpha1 "vdesjardins/acm-manager/pkg/clientset/v1alpha1"
 
+	certac "vdesjardins/acm-manager/pkg/client/applyconfiguration/acmmanager/v1alpha1"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/acm"
 	acmtypes "github.com/aws/aws-sdk-go-v2/service/acm/types"
+	"github.com/aws/smithy-go"
 	multierror "github.com/hashicorp/go-multierror"
 	core "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -41,7 +44,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	dnsendpoint "sigs.k8s.io/external-dns/endpoint"
 
-	certificatev1alpha1 "vdesjardins/acm-manager/pkg/api/v1alpha1"
+	certificatev1alpha1 "vdesjardins/acm-manager/pkg/apis/acmmanager/v1alpha1"
+	certificateclient "vdesjardins/acm-manager/pkg/client/versioned"
 )
 
 // ACM interface for testing
@@ -81,8 +85,11 @@ func (a *acmClient) ListTagsForCertificate(ctx context.Context, params *acm.List
 	return a.svc.ListTagsForCertificate(ctx, params)
 }
 
-var ACMManagerOwnerName = "acm-manager"
-var ACMCertificateCleanupInterval = 6 * time.Hour
+var (
+	ACMManagerOwnerName           = "acm-manager"
+	ACMManagerFieldManager        = "acm-manager"
+	ACMCertificateCleanupInterval = 6 * time.Hour
+)
 
 const (
 	TagCertificateOwner     = "acm-manager/owner"
@@ -96,14 +103,16 @@ const (
 	CertificateEventCompareError   = "CompareError"
 	CertificateEventUpdateError    = "UpdateError"
 	CertificateEventCleanupError   = "CleanupError"
+	CertificateEventCleanupSuccess = "SuccessfulCleanup"
 )
 
 // CertificateReconciler reconciles a Certificate object
 type CertificateReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	svc      acmAPI
-	recorder record.EventRecorder
+	certClient certificateclient.Interface
+	Scheme     *runtime.Scheme
+	svc        acmAPI
+	recorder   record.EventRecorder
 }
 
 //+kubebuilder:rbac:groups=acm-manager.io,resources=certificates,verbs=get;list;watch;create;update;patch;delete
@@ -133,7 +142,7 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	finalizerName := "certificate.acm-manager.io/finalizer"
 
 	// examine DeletionTimestamp to determine if object is under deletion
-	if certificate.ObjectMeta.DeletionTimestamp.IsZero() {
+	if certificate.DeletionTimestamp.IsZero() {
 		// The object is not being deleted, so if it does not have our finalizer,
 		// then lets add the finalizer and update the object. This is equivalent
 		// registering our finalizer.
@@ -171,16 +180,18 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	r.svc = newAcmClient(acm.NewFromConfig(cfg))
 
 	// create cert request if does not exist
+	certificateCreated := false
 	if certificate.Status.CertificateArn == "" {
 		if err := r.requestACMCertificate(ctx, certificate); err != nil {
 			log.Error(err, "unable to request certificate")
 			r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventRequestError, err.Error())
 			certificate.Status.Status = certificatev1alpha1.CertificateStatusError
-			if err := r.Status().Update(ctx, certificate); err != nil {
+			if err := r.updateStatus(ctx, certificate); err != nil {
 				log.Error(err, "unable to update status")
 			}
 			return ctrl.Result{}, err
 		}
+		certificateCreated = true
 	} else {
 		// if exists need to check if it has changed
 		equals, err := r.compareACMCertificate(ctx, certificate)
@@ -196,22 +207,24 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				log.Error(err, "unable to request certificate")
 				r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventRequestError, err.Error())
 				certificate.Status.Status = certificatev1alpha1.CertificateStatusError
-				if err := r.Status().Update(ctx, certificate); err != nil {
+				if err := r.updateStatus(ctx, certificate); err != nil {
 					log.Error(err, "unable to update status")
 				}
 				return ctrl.Result{}, err
 			}
 			// clear status
 			certificate.Status.ResourceRecords = []certificatev1alpha1.ResourceRecord{}
-			certificate.Status.NotBefore = metav1.Time{}
-			certificate.Status.NotAfter = metav1.Time{}
+			certificateCreated = true
 		}
 	}
 
 	// save status state
-	if err := r.Status().Update(ctx, certificate); err != nil {
-		log.Error(err, "unable to update certificate resource")
+	if err := r.updateStatus(ctx, certificate); err != nil {
+		log.Error(err, "unable to update certificate resource status")
 		r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventUpdateError, err.Error())
+		if certificateCreated {
+			r.deleteACMCertificate(ctx, certificate)
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -220,18 +233,24 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err != nil {
 		log.Error(err, "unable to update certificate info")
 		r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventUpdateError, err.Error())
+		if certificateCreated {
+			r.deleteACMCertificate(ctx, certificate)
+		}
 		return ctrl.Result{}, err
 	}
 
 	// save status state
-	if err := r.Status().Update(ctx, certificate); err != nil {
-		log.Error(err, "unable to update certificate resource")
+	if err := r.updateStatus(ctx, certificate); err != nil {
+		log.Error(err, "unable to update certificate resource status")
 		r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventUpdateError, err.Error())
+		if certificateCreated {
+			r.deleteACMCertificate(ctx, certificate)
+		}
 		return ctrl.Result{}, err
 	}
 
 	// requeue if information not yet available from ACM
-	if requeue == true {
+	if requeue {
 		return ctrl.Result{
 			Requeue:      true,
 			RequeueAfter: time.Second * 5,
@@ -256,13 +275,20 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// cleanup old ACM certificates
-	if err := r.cleanupACMCertificates(ctx, certificate); err != nil {
+	nbCleanedUp, err := r.cleanupACMCertificates(ctx, certificate)
+	if err != nil {
 		log.Error(err, "error cleaning up old certificate")
-		r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventCleanupError, err.Error())
+		var ae smithy.APIError
+		if errors.As(err, &ae) {
+			r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventCleanupError, ae.ErrorCode())
+		}
 		return ctrl.Result{
 			Requeue:      true,
 			RequeueAfter: time.Second * 5,
 		}, nil
+	}
+	if nbCleanedUp > 0 {
+		r.recorder.Event(certificate, core.EventTypeNormal, CertificateEventCleanupSuccess, fmt.Sprintf("%d certificate(s) cleaned up in ACM", nbCleanedUp))
 	}
 
 	return ctrl.Result{}, nil
@@ -270,7 +296,16 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *CertificateReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	log := log.FromContext(context.TODO())
+
 	r.recorder = mgr.GetEventRecorderFor("Certificate")
+
+	var err error
+	r.certClient, err = certificateclient.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		log.Error(err, "unable to initialize certificate client")
+		return err
+	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&certificatev1alpha1.Certificate{}).
@@ -281,7 +316,10 @@ func (r *CertificateReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *CertificateReconciler) compareACMCertificate(ctx context.Context, cert *certificatev1alpha1.Certificate) (bool, error) {
 	detail, err := r.getACMCertificateDetail(ctx, cert)
 	if err != nil {
-		return false, fmt.Errorf("unable to retreive certificate detail: %w", err)
+		if apiErr := new(acmtypes.ResourceNotFoundException); errors.As(err, &apiErr) {
+			return false, nil
+		}
+		return false, fmt.Errorf("unable to retreive certificate detail to perform comparision: %w", err)
 	}
 
 	if *detail.DomainName != cert.Spec.CommonName {
@@ -321,7 +359,7 @@ func (r *CertificateReconciler) requestACMCertificate(ctx context.Context, cert 
 func (r *CertificateReconciler) updateCertificateInfo(ctx context.Context, cert *certificatev1alpha1.Certificate) (bool, error) {
 	detail, err := r.getACMCertificateDetail(ctx, cert)
 	if err != nil {
-		return true, fmt.Errorf("unable to retreive certificate detail: %w", err)
+		return true, fmt.Errorf("unable to retreive certificate detail for update: %w", err)
 	}
 
 	records := []certificatev1alpha1.ResourceRecord{}
@@ -338,10 +376,12 @@ func (r *CertificateReconciler) updateCertificateInfo(ctx context.Context, cert 
 	cert.Status.ResourceRecords = records
 
 	if detail.NotBefore != nil {
-		cert.Status.NotBefore = metav1.NewTime(*detail.NotBefore)
+		t := metav1.NewTime(*detail.NotBefore)
+		cert.Status.NotBefore = &t
 	}
 	if detail.NotAfter != nil {
-		cert.Status.NotAfter = metav1.NewTime(*detail.NotAfter)
+		t := metav1.NewTime(*detail.NotAfter)
+		cert.Status.NotAfter = &t
 	}
 
 	cert.Status.Status = convertFrom(detail.Status)
@@ -400,8 +440,10 @@ func (r *CertificateReconciler) deleteACMCertificate(ctx context.Context, cert *
 	return nil
 }
 
-func (r *CertificateReconciler) cleanupACMCertificates(ctx context.Context, cert *certificatev1alpha1.Certificate) error {
+func (r *CertificateReconciler) cleanupACMCertificates(ctx context.Context, cert *certificatev1alpha1.Certificate) (int, error) {
 	var result error
+
+	nbCleanedUp := 0
 
 	input := &acm.ListCertificatesInput{
 		// MaxItems:            new(int32),
@@ -409,8 +451,9 @@ func (r *CertificateReconciler) cleanupACMCertificates(ctx context.Context, cert
 	}
 	output, err := r.svc.ListCertificates(ctx, input)
 	if err != nil {
-		return fmt.Errorf("unable to list certificates: %w", err)
+		return nbCleanedUp, fmt.Errorf("unable to list certificates: %w", err)
 	}
+
 	for _, summary := range output.CertificateSummaryList {
 		log := log.FromContext(ctx).WithValues("ARN", *summary.CertificateArn)
 		if *summary.CertificateArn == cert.Status.CertificateArn {
@@ -421,7 +464,7 @@ func (r *CertificateReconciler) cleanupACMCertificates(ctx context.Context, cert
 		}
 		output, err := r.svc.ListTagsForCertificate(ctx, input)
 		if err != nil {
-			return fmt.Errorf("unable to retrieve list of tags for certificate %s/%s: %w", cert.Namespace, cert.Name, err)
+			return nbCleanedUp, fmt.Errorf("unable to retrieve list of tags for certificate %s/%s: %w", cert.Namespace, cert.Name, err)
 		}
 
 		tags := make(map[string]string, len(output.Tags))
@@ -438,11 +481,12 @@ func (r *CertificateReconciler) cleanupACMCertificates(ctx context.Context, cert
 				result = multierror.Append(result, err)
 			} else {
 				log.Info("certificate deleted in ACM")
+				nbCleanedUp += 1
 			}
 		}
 	}
 
-	return result
+	return nbCleanedUp, result
 }
 
 func (r *CertificateReconciler) syncDNSEndpoints(ctx context.Context, cert *certificatev1alpha1.Certificate) error {
@@ -468,7 +512,7 @@ func (r *CertificateReconciler) syncDNSEndpoints(ctx context.Context, cert *cert
 	endpoint.Spec.Endpoints = endpoints
 
 	var err error
-	if newEndpoint == true {
+	if newEndpoint {
 		err = r.Create(ctx, endpoint)
 	} else {
 		err = r.Update(ctx, endpoint)
@@ -478,6 +522,10 @@ func (r *CertificateReconciler) syncDNSEndpoints(ctx context.Context, cert *cert
 	}
 
 	return nil
+}
+
+func (r *CertificateReconciler) updateStatus(ctx context.Context, cert *certificatev1alpha1.Certificate) error {
+	return updateStatus(ctx, r.certClient, cert)
 }
 
 // Helper functions to check and remove string from a slice of strings.
@@ -524,12 +572,8 @@ func convertFrom(status acmtypes.CertificateStatus) certificatev1alpha1.Certific
 func StartACMCertificateCleanupJob() {
 	ticker := time.NewTicker(ACMCertificateCleanupInterval)
 	go func() {
-		cleanupOrphanACMCertificates()
-		for {
-			select {
-			case <-ticker.C:
-				cleanupOrphanACMCertificates()
-			}
+		for range ticker.C {
+			cleanupOrphanACMCertificates()
 		}
 	}()
 }
@@ -599,4 +643,38 @@ func cleanupOrphanACMCertificates() {
 			}
 		}
 	}
+}
+
+func updateStatus(ctx context.Context, certClient certificateclient.Interface, cert *certificatev1alpha1.Certificate) error {
+	if _, err := certClient.AcmmanagerV1alpha1().Certificates(cert.Namespace).
+		ApplyStatus(ctx,
+			ApplyConfigurationFromCertificate(cert),
+			metav1.ApplyOptions{FieldManager: ACMManagerFieldManager, Force: true}); err != nil {
+		return fmt.Errorf("failed to apply certificate status subresource: %w", err)
+	}
+	return nil
+}
+
+func ApplyConfigurationFromCertificate(c *certificatev1alpha1.Certificate) *certac.CertificateApplyConfiguration {
+	rr := []*certac.ResourceRecordApplyConfiguration{}
+	for _, d := range c.Status.ResourceRecords {
+		rr = append(rr, certac.ResourceRecord().
+			WithName(d.Name).
+			WithType(d.Type).
+			WithValue(d.Value))
+	}
+
+	status := certac.CertificateStatus().
+		WithCertificateArn(c.Status.CertificateArn).
+		WithStatus(c.Status.Status).
+		WithResourceRecords(rr...)
+
+	if c.Status.NotAfter != nil {
+		status.WithNotAfter(*c.Status.NotAfter)
+	}
+	if c.Status.NotBefore != nil {
+		status.WithNotBefore(*c.Status.NotBefore)
+	}
+
+	return certac.Certificate(c.Name, c.Namespace).WithStatus(status)
 }

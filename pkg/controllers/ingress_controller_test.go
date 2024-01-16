@@ -20,7 +20,7 @@ import (
 	"context"
 	"time"
 
-	certificatev1alpha1 "vdesjardins/acm-manager/pkg/api/v1alpha1"
+	certificatev1alpha1 "vdesjardins/acm-manager/pkg/apis/acmmanager/v1alpha1"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -30,7 +30,6 @@ import (
 )
 
 var _ = Describe("Ingress controller", func() {
-
 	const (
 		timeout  = time.Second * 30
 		interval = time.Millisecond * 250
@@ -52,10 +51,7 @@ var _ = Describe("Ingress controller", func() {
 			By("By checking that certificate is created")
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, lookupKey, createdCert)
-				if err != nil {
-					return false
-				}
-				return true
+				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
 			By("By checking that ingress is updated with certificate arn")

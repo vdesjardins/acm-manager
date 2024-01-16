@@ -10,8 +10,12 @@ resources:
   controller: true
   domain: acm-manager.io
   kind: Certificate
-  path: vdesjardins/acm-manager/pkg/api/v1alpha1
+  path: vdesjardins/acm-manager/pkg/apis/acmanager/v1alpha1
   version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
 - controller: true
   domain: acm-manager.io
   group: networking.k8s.io

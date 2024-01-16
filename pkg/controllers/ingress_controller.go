@@ -21,12 +21,15 @@ import (
 	"strings"
 	"time"
 
-	certificatev1alpha1 "vdesjardins/acm-manager/pkg/api/v1alpha1"
+	certificatev1alpha1 "vdesjardins/acm-manager/pkg/apis/acmmanager/v1alpha1"
+	certificateclient "vdesjardins/acm-manager/pkg/client/versioned"
 
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	networkingv1ac "k8s.io/client-go/applyconfigurations/networking/v1"
+	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -46,7 +49,9 @@ var IngressAutoDetect = true
 // IngressReconciler reconciles a Ingress object
 type IngressReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	clientset  *kubernetes.Clientset
+	certClient certificateclient.Interface
+	Scheme     *runtime.Scheme
 }
 
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;update;patch
@@ -69,7 +74,7 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// if deleting do not sync
-	if !ingress.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !ingress.DeletionTimestamp.IsZero() {
 		log.Info("ingress marked for deletion. skipping certificate generation")
 		return ctrl.Result{}, nil
 	}
@@ -85,8 +90,8 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.Get(ctx, req.NamespacedName, cert); err != nil {
 		if apierrors.IsNotFound(err) {
 			newCert = true
-			cert.Name = req.NamespacedName.Name
-			cert.Namespace = req.NamespacedName.Namespace
+			cert.Name = req.Name
+			cert.Namespace = req.Namespace
 		} else {
 			log.Error(err, "error loading certificate for ingress")
 			return ctrl.Result{}, err
@@ -128,7 +133,7 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{}, err
 		}
 	} else {
-		if err := r.Update(ctx, cert); err != nil {
+		if err := updateStatus(ctx, r.certClient, cert); err != nil {
 			log.Error(err, "unable to update certificate for ingress")
 			return ctrl.Result{}, err
 		}
@@ -141,8 +146,12 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}, nil
 	}
 	if ingress.GetAnnotations()[IngressCertificateArnKey] != cert.Status.CertificateArn {
-		ingress.Annotations[IngressCertificateArnKey] = cert.Status.CertificateArn
-		if err := r.Update(ctx, ingress); err != nil {
+		ingac := networkingv1ac.Ingress(ingress.GetName(), ingress.GetNamespace()).
+			WithAnnotations(map[string]string{IngressCertificateArnKey: cert.Status.CertificateArn})
+
+		_, err := r.clientset.NetworkingV1().Ingresses(ingress.Namespace).
+			Apply(ctx, ingac, metav1.ApplyOptions{FieldManager: ACMManagerFieldManager, Force: true})
+		if err != nil {
 			log.Error(err, "unable to update ingress with certificate arn")
 			return ctrl.Result{}, err
 		}
@@ -153,6 +162,20 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *IngressReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	log := log.FromContext(context.TODO())
+
+	var err error
+	r.certClient, err = certificateclient.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		log.Error(err, "unable to initialize certificate client")
+		return err
+	}
+	r.clientset, err = kubernetes.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		log.Error(err, "unable to initialize kubernetes client")
+		return err
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&networkingv1.Ingress{}).
 		Owns(&certificatev1alpha1.Certificate{}).
@@ -168,7 +191,7 @@ func isIngressShouldCreateCert(ingress *networkingv1.Ingress) bool {
 		return false
 	}
 
-	if IngressAutoDetect == true && ingress.Spec.IngressClassName != nil && *ingress.Spec.IngressClassName == IngressClassValue &&
+	if IngressAutoDetect && ingress.Spec.IngressClassName != nil && *ingress.Spec.IngressClassName == IngressClassValue &&
 		ingress.GetAnnotations()[IngressSchemeKey] == IngressSchemeValue {
 		return true
 	}

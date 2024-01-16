@@ -32,10 +32,12 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	pkgscheme "sigs.k8s.io/controller-runtime/pkg/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	dnsendpoint "sigs.k8s.io/external-dns/endpoint"
 
-	certificatev1alpha1 "vdesjardins/acm-manager/pkg/api/v1alpha1"
+	certificatev1alpha1 "vdesjardins/acm-manager/pkg/apis/acmmanager/v1alpha1"
 	"vdesjardins/acm-manager/pkg/controllers"
 	//+kubebuilder:scaffold:imports
 )
@@ -78,16 +80,20 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
 	controllers.ACMManagerOwnerName = managerOwnerName
 	controllers.IngressAutoDetect = ingressAutoDetect
 	controllers.ACMCertificateCleanupInterval = acmCleanupJobInternval
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: metricsAddr,
+		},
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port: 9443,
+		}),
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "99c2bcfe.acm-manager.io",

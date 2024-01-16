@@ -11,7 +11,7 @@ containerdConfigPatches:
     endpoint = ["http://kind-registry:5000"]
 nodes:
 - role: control-plane
-  image: "kindest/node:v1.21.1@sha256:69860bda5563ac81e3c0057d654b5253219618a22ec3a346306239bba8cfa1a6"
+  image: "kindest/node:v1.26.6@sha256:5e5d789e90c1512c8c480844e0985bc3b4da4ba66179cc5b540fe5b785ca97b5"
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration
