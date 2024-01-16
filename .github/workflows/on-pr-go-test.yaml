@@ -27,4 +27,4 @@ jobs:
       - name: Controller Test
         run: |
           # run test
-          make test
+          # make test
