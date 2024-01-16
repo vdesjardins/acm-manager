@@ -12,7 +12,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v1
         with:
-          go-version: 1.17.3
+          go-version: 1.21.3
         id: go
 
       - name: Check out code into the Go module directory
@@ -28,7 +28,7 @@ jobs:
         run: |
           os=$(go env GOOS)
           arch=$(go env GOARCH)
-          K8S_VERSION=1.22.1
+          K8S_VERSION=1.26.6
           tools_path=/tmp/kubebuilder
           # download kubebuilder and extract it to tmp
           mkdir -p ${tools_path}
