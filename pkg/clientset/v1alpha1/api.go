@@ -3,7 +3,7 @@ package v1alpha1
 import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	api "vdesjardins/acm-manager/pkg/api/v1alpha1"
+	api "vdesjardins/acm-manager/pkg/apis/acmmanager/v1alpha1"
 )
 
 type Interface interface {
@@ -21,7 +21,7 @@ func NewForConfig(c *rest.Config) (*Client, error) {
 	}
 
 	config := *c
-	config.ContentConfig.GroupVersion = &api.GroupVersion
+	config.ContentConfig.GroupVersion = &api.SchemeGroupVersion
 	config.APIPath = "/apis"
 	config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
 	config.UserAgent = rest.DefaultKubernetesUserAgent()

@@ -27,7 +27,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	certificatev1alpha1 "vdesjardins/acm-manager/pkg/api/v1alpha1"
+	certificatev1alpha1 "vdesjardins/acm-manager/pkg/apis/acmmanager/v1alpha1"
 	clientv1alpha1 "vdesjardins/acm-manager/pkg/clientset/v1alpha1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -195,8 +195,7 @@ func TestCertificateChange(t *testing.T) {
 	}
 }
 
-//TODO: test ingress
-
+// TODO: test ingress
 func waitForCertificateStatus(ctx context.Context, certClient *clientv1alpha1.Client, certName, ns string, status certificatev1alpha1.CertificateStatusType) error {
 	return wait.PollImmediate(250*time.Millisecond, 5*time.Minute,
 		func() (bool, error) {

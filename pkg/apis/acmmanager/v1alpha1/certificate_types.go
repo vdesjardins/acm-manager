@@ -36,6 +36,7 @@ const (
 )
 
 // CertificateSpec defines the desired state of Certificate
+// +k8s:openapi-gen=true
 type CertificateSpec struct {
 	//+kubebuilder:validation:MaxLength=64
 	//+kubebuilder:validation:Required
@@ -48,6 +49,7 @@ type CertificateSpec struct {
 }
 
 // CertificateStatus defines the observed state of Certificate
+// +k8s:openapi-gen=true
 type CertificateStatus struct {
 	// Certificate ARN
 	CertificateArn string `json:"certificateArn,omitempty"`
@@ -59,12 +61,14 @@ type CertificateStatus struct {
 	Status CertificateStatusType `json:"status,omitempty"`
 
 	// Certificate not before date
-	NotBefore metav1.Time `json:"notBefore,omitempty"`
+	NotBefore *metav1.Time `json:"notBefore,omitempty"`
 
 	// Certificate not after date
-	NotAfter metav1.Time `json:"notAfter,omitempty"`
+	NotAfter *metav1.Time `json:"notAfter,omitempty"`
 }
 
+//+genclient
+//+k8s:openapi-gen=true
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 //+kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`
@@ -83,6 +87,7 @@ type Certificate struct {
 //+kubebuilder:object:root=true
 
 // CertificateList contains a list of Certificate
+// +k8s:openapi-gen=true
 type CertificateList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

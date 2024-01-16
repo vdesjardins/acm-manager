@@ -2,7 +2,7 @@
 # Image URL to use all building/pushing image targets
 IMG ?= docker.io/vdesjardins/acm-manager:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.22
+ENVTEST_K8S_VERSION = 1.26.1
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -22,6 +22,31 @@ SHELL = bash
 
 .PHONY: all
 all: build
+
+# Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
+ifeq (,$(shell go env GOBIN))
+GOBIN=$(shell go env GOPATH)/bin
+else
+GOBIN=$(shell go env GOBIN)
+endif
+
+## Location to install dependencies to
+LOCALBIN ?= $(shell pwd)/bin
+$(LOCALBIN):
+	mkdir -p $(LOCALBIN)
+
+## Tool Binaries
+KUBECTL ?= kubectl
+APPLYCONFIGURATION_GEN ?= $(LOCALBIN)/applyconfiguration-gen
+CLIENT_GEN ?= $(LOCALBIN)/client-gen
+KUSTOMIZE ?= $(LOCALBIN)/kustomize
+CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
+ENVTEST ?= $(LOCALBIN)/setup-envtest
+
+## Tool Versions
+KUSTOMIZE_VERSION ?= v5.2.1
+CODE_GENERATOR_VERSION ?= v0.28.3
+CONTROLLER_TOOLS_VERSION ?= v0.13.0
 
 ##@ General
 
@@ -48,9 +73,31 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 	$(KUSTOMIZE) build config/crd > ./charts/acm-manager/crds/crds.yaml
 
 .PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: controller-gen k8s-client-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
+GO_MODULE = $(shell go list -m)
+API_DIRS = $(shell find pkg/apis -mindepth 2 -type d | sed "s|^|$(shell go list -m)/|" | paste -sd ",")
+.PHONY: k8s-client-gen
+k8s-client-gen: client-gen applyconfiguration-gen
+	rm -rf pkg/client/{applyconfiguration,versioned}
+	@echo ">> generating pkg/client/applyconfiguration..."
+	$(APPLYCONFIGURATION_GEN) \
+		--go-header-file 	hack/boilerplate.go.txt \
+		--input-dirs		"$(API_DIRS)" \
+		--output-package  	"$(GO_MODULE)/pkg/client/applyconfiguration" \
+		--trim-path-prefix 	"$(GO_MODULE)" \
+		--output-base    	"."
+	@echo ">> generating pkg/client/versioned..."
+	$(CLIENT_GEN) \
+		--go-header-file 	          hack/boilerplate.go.txt \
+		--input-base                  "" \
+		--apply-configuration-package "$(GO_MODULE)/pkg/client/applyconfiguration" \
+		--clientset-name              "versioned" \
+		--input                       "$(API_DIRS)" \
+		--output-package              "$(GO_MODULE)/pkg/client" \
+		--trim-path-prefix 	          "$(GO_MODULE)" \
+		--output-base                 "."
 .PHONY: fmt
 fmt: ## Run go fmt against code.
 	go fmt ./...
@@ -61,7 +108,7 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) --arch=amd64 use $(ENVTEST_K8S_VERSION) -p path)" go test ./pkg/... -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
 
 ##@ Build
 
@@ -74,7 +121,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
 
 .PHONY: docker-build
-docker-build: test ## Build docker image with the manager.
+docker-build: ## Build docker image with the manager.
 	docker build -t ${IMG} .
 
 .PHONY: docker-push
@@ -104,34 +151,39 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
 
-CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
-.PHONY: controller-gen
-controller-gen: ## Download controller-gen locally if necessary.
-	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.7.0)
+.PHONY: applyconfiguration-gen
+applyconfiguration-gen: $(APPLYCONFIGURATION_GEN) ## Download applyconfiguration-gen locally if necessary.
+$(APPLYCONFIGURATION_GEN): $(LOCALBIN)
+	# FIXME: applyconfiguration-gen does not currently support any flag for obtaining version
+	test -s $(LOCALBIN)/applyconfiguration-gen || \
+	GOBIN=$(LOCALBIN) go install k8s.io/code-generator/cmd/applyconfiguration-gen@$(CODE_GENERATOR_VERSION)
 
-KUSTOMIZE = kustomize
+.PHONY: client-gen
+client-gen: $(CLIENT_GEN) ## Download client-gen locally if necessary.
+$(CLIENT_GEN): $(LOCALBIN)
+	# FIXME: client-gen does not currently support any flag for obtaining version
+	test -s $(LOCALBIN)/client-gen || \
+	GOBIN=$(LOCALBIN) go install k8s.io/code-generator/cmd/client-gen@$(CODE_GENERATOR_VERSION)
+
 .PHONY: kustomize
-kustomize: ## Download kustomize locally if necessary.
-	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v3@v3.8.7)
+kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary. If wrong version is installed, it will be removed before downloading.
+$(KUSTOMIZE): $(LOCALBIN)
+	@if test -x $(LOCALBIN)/kustomize && ! $(LOCALBIN)/kustomize version | grep -q $(KUSTOMIZE_VERSION); then \
+		echo "$(LOCALBIN)/kustomize version is not expected $(KUSTOMIZE_VERSION). Removing it before installing."; \
+		rm -rf $(LOCALBIN)/kustomize; \
+	fi
+	test -s $(LOCALBIN)/kustomize || GOBIN=$(LOCALBIN) GO111MODULE=on go install sigs.k8s.io/kustomize/kustomize/v5@$(KUSTOMIZE_VERSION)
 
-ENVTEST = $(shell pwd)/bin/setup-envtest
+.PHONY: controller-gen
+controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary. If wrong version is installed, it will be overwritten.
+$(CONTROLLER_GEN): $(LOCALBIN)
+	test -s $(LOCALBIN)/controller-gen && $(LOCALBIN)/controller-gen --version | grep -q $(CONTROLLER_TOOLS_VERSION) || \
+	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
+
 .PHONY: envtest
-envtest: ## Download envtest-setup locally if necessary.
-	$(call go-get-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@latest)
-
-# go-get-tool will 'go get' any package $2 and install it to $1.
-PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
-define go-get-tool
-@[ -f $(1) ] || { \
-set -e ;\
-TMP_DIR=$$(mktemp -d) ;\
-cd $$TMP_DIR ;\
-go mod init tmp ;\
-echo "Downloading $(2)" ;\
-GOBIN=$(PROJECT_DIR)/bin go get $(2) ;\
-rm -rf $$TMP_DIR ;\
-}
-endef
+envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
+$(ENVTEST): $(LOCALBIN)
+	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
 # ==================================
 # E2E testing
@@ -154,6 +206,8 @@ endif
 
 OIDC_ACM_MANAGER_IAM_ROLE := arn:aws:iam::${AWS_ACCOUNT}:role/acm-manager
 OIDC_EXTERNAL_DNS_IAM_ROLE := arn:aws:iam::${AWS_ACCOUNT}:role/external-dns
+
+OIDC_S3_BUCKET_NAME ?= acm-manager-test
 
 .PHONY: setup-aws
 setup-aws: ## setup AWS for IRSA
@@ -216,8 +270,8 @@ setup-eks-webhook:
 	curl $$APISERVER/.well-known/openid-configuration --header "Authorization: Bearer $$TOKEN" --insecure -o openid-configuration;
 	curl $$APISERVER/openid/v1/jwks --header "Authorization: Bearer $$TOKEN" --insecure -o jwks;
 	#Put idP configuration in public S3 bucket
-	aws s3 cp --acl public-read jwks s3://$$OIDC_S3_BUCKET_NAME/cluster/acm-cluster/openid/v1/jwks;
-	aws s3 cp --acl public-read openid-configuration s3://$$OIDC_S3_BUCKET_NAME/cluster/acm-cluster/.well-known/openid-configuration;
+	aws s3 cp jwks s3://$$OIDC_S3_BUCKET_NAME/cluster/acm-cluster/openid/v1/jwks;
+	aws s3 cp openid-configuration s3://$$OIDC_S3_BUCKET_NAME/cluster/acm-cluster/.well-known/openid-configuration;
 	sleep 60;
 	envsubst -no-empty -i e2e/kind_config/install_eks.yaml | kubectl apply -f - --kubeconfig=${TEST_KUBECONFIG_LOCATION};
 	kubectl wait --for=condition=Available --timeout 300s deployment pod-identity-webhook --kubeconfig=${TEST_KUBECONFIG_LOCATION};
@@ -242,7 +296,7 @@ deploy-external-dns: ## Deploy External-DNS controller to the K8s cluster
 	kubectl wait --for=condition=Available --timeout=300s deployment external-dns --namespace external-dns --kubeconfig=${TEST_KUBECONFIG_LOCATION}
 
 .PHONY: install-local
-install-local: docker-build docker-push-local
+install-local: kustomize docker-build docker-push-local
 	#install plugin from local docker repo
 	sleep 15
 	#Create namespace and service account

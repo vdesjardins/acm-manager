@@ -3,7 +3,7 @@ package v1alpha1
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	api "vdesjardins/acm-manager/pkg/api/v1alpha1"
+	api "vdesjardins/acm-manager/pkg/apis/acmmanager/v1alpha1"
 )
 
 var (
@@ -12,10 +12,10 @@ var (
 )
 
 func addKnownTypes(scheme *runtime.Scheme) error {
-	scheme.AddKnownTypes(api.GroupVersion,
+	scheme.AddKnownTypes(api.SchemeGroupVersion,
 		&api.Certificate{},
 	)
 
-	metav1.AddToGroupVersion(scheme, api.GroupVersion)
+	metav1.AddToGroupVersion(scheme, api.SchemeGroupVersion)
 	return nil
 }

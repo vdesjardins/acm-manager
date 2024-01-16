@@ -5,7 +5,9 @@ set -e
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 
 AWS_ACCOUNT=$(aws sts get-caller-identity | jq '.Account' -Mr)
-AWS_REGION=$(aws configure get region)
+if [[ $AWS_REGION == "" ]]; then
+	AWS_REGION=$(aws configure get region)
+fi
 OIDC_S3_BUCKET_NAME=${1}
 
 if [[ $OIDC_S3_BUCKET_NAME == "" ]]; then

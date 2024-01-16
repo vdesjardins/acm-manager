@@ -9,14 +9,12 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"vdesjardins/acm-manager/pkg/api/v1alpha1"
+	"vdesjardins/acm-manager/pkg/apis/acmmanager/v1alpha1"
 )
 
-var (
-	certificates = "certificates"
-)
+var certificates = "certificates"
 
-//CertificateInterface is a interface for interacting with a Certificate
+// CertificateInterface is a interface for interacting with a Certificate
 type CertificateInterface interface {
 	Get(ctx context.Context, name string, opts metav1.GetOptions) (*v1alpha1.Certificate, error)
 	Create(ctx context.Context, cert *v1alpha1.Certificate, opts metav1.CreateOptions) (*v1alpha1.Certificate, error)
