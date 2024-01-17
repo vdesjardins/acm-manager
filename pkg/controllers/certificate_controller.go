@@ -180,7 +180,7 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			log.Error(err, "unable to request certificate")
 			r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventRequestError, err.Error())
 			certificate.Status.Status = certificatev1alpha1.CertificateStatusError
-			if err := r.updateStatus(ctx, certificate); err != nil {
+			if err := r.updateWithStatus(ctx, certificate); err != nil {
 				log.Error(err, "unable to update status")
 			}
 			return ctrl.Result{}, err
@@ -201,7 +201,7 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				log.Error(err, "unable to request certificate")
 				r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventRequestError, err.Error())
 				certificate.Status.Status = certificatev1alpha1.CertificateStatusError
-				if err := r.updateStatus(ctx, certificate); err != nil {
+				if err := r.updateWithStatus(ctx, certificate); err != nil {
 					log.Error(err, "unable to update status")
 				}
 				return ctrl.Result{}, err
@@ -213,7 +213,7 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// save status state
-	if err := r.updateStatus(ctx, certificate); err != nil {
+	if err := r.updateWithStatus(ctx, certificate); err != nil {
 		log.Error(err, "unable to update certificate resource status")
 		r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventUpdateError, err.Error())
 		if certificateCreated {
@@ -234,7 +234,7 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// save status state
-	if err := r.updateStatus(ctx, certificate); err != nil {
+	if err := r.updateWithStatus(ctx, certificate); err != nil {
 		log.Error(err, "unable to update certificate resource status")
 		r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventUpdateError, err.Error())
 		if certificateCreated {
@@ -316,10 +316,10 @@ func (r *CertificateReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *CertificateReconciler) compareACMCertificate(ctx context.Context, cert *certificatev1alpha1.Certificate) (bool, error) {
 	detail, err := r.getACMCertificateDetail(ctx, cert)
 	if err != nil {
-		if apiErr := new(acmtypes.ResourceNotFoundException); errors.As(err, &apiErr) {
-			return false, nil
+		var apiErr smithy.APIError
+		if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "ResourceNotFoundException" {
+			return false, fmt.Errorf("unable to retreive certificate detail to perform comparision: %w", err)
 		}
-		return false, fmt.Errorf("unable to retreive certificate detail to perform comparision: %w", err)
 	}
 
 	if *detail.DomainName != cert.Spec.CommonName {
@@ -429,12 +429,13 @@ func (r *CertificateReconciler) deleteACMCertificate(ctx context.Context, cert *
 	input := &acm.DeleteCertificateInput{
 		CertificateArn: aws.String(cert.Status.CertificateArn),
 	}
+
 	_, err := r.svc.DeleteCertificate(ctx, input)
 	if err != nil {
-		if apiErr := new(acmtypes.ResourceNotFoundException); errors.As(err, &apiErr) {
-			return nil
+		var apiErr smithy.APIError
+		if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "ResourceNotFoundException" {
+			return fmt.Errorf("unable to delete certificate with ARN: %s: %w", cert.Status.CertificateArn, err)
 		}
-		return fmt.Errorf("unable to delete certificate with ARN: %s: %w", cert.Status.CertificateArn, err)
 	}
 
 	return nil
@@ -524,8 +525,8 @@ func (r *CertificateReconciler) syncDNSEndpoints(ctx context.Context, cert *cert
 	return nil
 }
 
-func (r *CertificateReconciler) updateStatus(ctx context.Context, cert *certificatev1alpha1.Certificate) error {
-	return updateStatus(ctx, r.certClient, cert)
+func (r *CertificateReconciler) updateWithStatus(ctx context.Context, cert *certificatev1alpha1.Certificate) error {
+	return updateCertificateWithStatus(ctx, r.certClient, cert)
 }
 
 // Helper functions to check and remove string from a slice of strings.
@@ -645,12 +646,12 @@ func cleanupOrphanACMCertificates() {
 	}
 }
 
-func updateStatus(ctx context.Context, certClient certificateclient.Interface, cert *certificatev1alpha1.Certificate) error {
+func updateCertificateWithStatus(ctx context.Context, certClient certificateclient.Interface, cert *certificatev1alpha1.Certificate) error {
 	if _, err := certClient.AcmmanagerV1alpha1().Certificates(cert.Namespace).
 		ApplyStatus(ctx,
 			ApplyConfigurationFromCertificate(cert),
 			metav1.ApplyOptions{FieldManager: ACMManagerFieldManager, Force: true}); err != nil {
-		return fmt.Errorf("failed to apply certificate status subresource: %w", err)
+		return fmt.Errorf("failed to apply certificate and status subresource: %w", err)
 	}
 	return nil
 }

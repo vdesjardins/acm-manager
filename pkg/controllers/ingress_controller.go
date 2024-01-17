@@ -133,7 +133,7 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{}, err
 		}
 	} else {
-		if err := updateStatus(ctx, r.certClient, cert); err != nil {
+		if err := updateCertificateWithStatus(ctx, r.certClient, cert); err != nil {
 			log.Error(err, "unable to update certificate for ingress")
 			return ctrl.Result{}, err
 		}
