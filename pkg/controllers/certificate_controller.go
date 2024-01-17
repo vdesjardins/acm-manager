@@ -173,12 +173,6 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	r.svc = newAcmClient(acm.NewFromConfig(cfg))
-
 	// create cert request if does not exist
 	certificateCreated := false
 	if certificate.Status.CertificateArn == "" {
@@ -306,6 +300,12 @@ func (r *CertificateReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		log.Error(err, "unable to initialize certificate client")
 		return err
 	}
+
+	cfg, err := config.LoadDefaultConfig(context.Background())
+	if err != nil {
+		return err
+	}
+	r.svc = newAcmClient(acm.NewFromConfig(cfg))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&certificatev1alpha1.Certificate{}).
