@@ -646,12 +646,22 @@ func cleanupOrphanACMCertificates() {
 	}
 }
 
+func updateCertificate(ctx context.Context, certClient certificateclient.Interface, cert *certificatev1alpha1.Certificate) error {
+	if _, err := certClient.AcmmanagerV1alpha1().Certificates(cert.Namespace).
+		Apply(ctx,
+			ApplyConfigurationFromCertificate(cert),
+			metav1.ApplyOptions{FieldManager: ACMManagerFieldManager, Force: true}); err != nil {
+		return fmt.Errorf("failed to apply certificate resource: %w", err)
+	}
+	return nil
+}
+
 func updateCertificateWithStatus(ctx context.Context, certClient certificateclient.Interface, cert *certificatev1alpha1.Certificate) error {
 	if _, err := certClient.AcmmanagerV1alpha1().Certificates(cert.Namespace).
 		ApplyStatus(ctx,
 			ApplyConfigurationFromCertificate(cert),
 			metav1.ApplyOptions{FieldManager: ACMManagerFieldManager, Force: true}); err != nil {
-		return fmt.Errorf("failed to apply certificate and status subresource: %w", err)
+		return fmt.Errorf("failed to apply certificate status subresource: %w", err)
 	}
 	return nil
 }
@@ -677,5 +687,11 @@ func ApplyConfigurationFromCertificate(c *certificatev1alpha1.Certificate) *cert
 		status.WithNotBefore(*c.Status.NotBefore)
 	}
 
-	return certac.Certificate(c.Name, c.Namespace).WithStatus(status)
+	spec := certac.CertificateSpec().
+		WithCommonName(c.Spec.CommonName).
+		WithSubjectAlternativeNames(c.Spec.SubjectAlternativeNames...)
+
+	return certac.Certificate(c.Name, c.Namespace).
+		WithSpec(spec).
+		WithStatus(status)
 }

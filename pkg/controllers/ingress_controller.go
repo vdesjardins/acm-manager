@@ -81,7 +81,7 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// check for annotation that enable/disable auto cert creation
 	if !isIngressShouldCreateCert(ingress) {
-		log.Info("ingress does not meet annotattion criteria. skipping certificate generation")
+		log.Info("ingress does not meet annotation criteria. skipping certificate generation")
 		return ctrl.Result{}, nil
 	}
 
@@ -100,6 +100,7 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		if len(cert.GetOwnerReferences()) == 0 ||
 			cert.GetOwnerReferences()[0].Kind != "Ingress" ||
 			cert.GetOwnerReferences()[0].Name != req.Name {
+			log.Info("owner reference does not match. skipping reconciliation")
 			return ctrl.Result{}, nil
 		}
 	}
@@ -132,11 +133,13 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			log.Error(err, "unable to create certificate for ingress")
 			return ctrl.Result{}, err
 		}
+		log.Info("certificate created")
 	} else {
-		if err := updateCertificateWithStatus(ctx, r.certClient, cert); err != nil {
+		if err := updateCertificate(ctx, r.certClient, cert); err != nil {
 			log.Error(err, "unable to update certificate for ingress")
 			return ctrl.Result{}, err
 		}
+		log.Info("certificate updated from ingress info")
 	}
 
 	// update ingress with certificate ARN if available. if not requeue
