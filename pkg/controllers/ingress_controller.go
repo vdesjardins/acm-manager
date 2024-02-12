@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -123,6 +124,8 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		log.Info("no host declared in ingress's resource. skipping certificate generation")
 		return ctrl.Result{}, nil
 	}
+
+	slices.Sort(hosts)
 
 	cert.Spec.CommonName = hosts[0]
 	cert.Spec.SubjectAlternativeNames = hosts
