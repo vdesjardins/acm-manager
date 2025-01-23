@@ -2,7 +2,21 @@
 # Image URL to use all building/pushing image targets
 IMG ?= docker.io/vdesjardins/acm-manager:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.26.1
+ENVTEST_K8S_VERSION = 1.31.0
+
+
+## Location to install dependencies to
+LOCALBIN ?= $(shell pwd)/bin
+$(LOCALBIN):
+	mkdir -p $(LOCALBIN)
+
+## Tool Binaries
+KUBECTL ?= kubectl
+APPLYCONFIGURATION_GEN ?= $(LOCALBIN)/applyconfiguration-gen
+CLIENT_GEN ?= $(LOCALBIN)/client-gen
+KUSTOMIZE ?= kustomize
+CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
+ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -44,9 +58,9 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 ## Tool Versions
-KUSTOMIZE_VERSION ?= v5.2.1
-CODE_GENERATOR_VERSION ?= v0.28.3
-CONTROLLER_TOOLS_VERSION ?= v0.13.0
+KUSTOMIZE_VERSION ?= v5.5.0
+CODE_GENERATOR_VERSION ?= v0.32.1
+CONTROLLER_TOOLS_VERSION ?= v0.16.4
 
 ##@ General
 
@@ -190,7 +204,7 @@ $(ENVTEST): $(LOCALBIN)
 # ==================================
 
 K8S_CLUSTER_NAME := acm-manager
-CERT_MANAGER_VERSION ?= 1.6.1
+CERT_MANAGER_VERSION ?= 1.16.2
 
 REGISTRY_NAME := "kind-registry"
 REGISTRY_PORT := 5000
