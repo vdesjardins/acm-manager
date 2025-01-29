@@ -1,0 +1,21 @@
+{{- if .Values.prometheus.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  labels:
+    {{- include "acm-manager.labels" . | nindent 4 }}
+    {{- toYaml .Values.prometheus.additionalLabels | nindent 4 }}
+  name: {{ include "acm-manager.fullname" . }}
+spec:
+  namespaceSelector:
+    matchNames:
+    - {{ .Release.Namespace }}
+  podMetricsEndpoints:
+  - port: http-prom
+  selector:
+    matchExpressions:
+    - key: control-plane
+      operator: In
+      values:
+      - controller-manager
+{{- end }}
