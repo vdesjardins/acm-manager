@@ -8,13 +8,18 @@ image:
   repository: ghcr.io/vdesjardins/acm-manager
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "0.0.13"
+  tag: "0.0.14"
 
-kubeRbacProxy:
-  image:
-    repository: gcr.io/kubebuilder/kube-rbac-proxy
-    pullPolicy: IfNotPresent
-    tag: v0.15.0
+# Permit metrics ingress access.
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/instance: prometheus-kube-prometheus-prometheus
 
 imagePullSecrets: []
 nameOverride: ""
@@ -47,10 +52,6 @@ securityContext: {}
   # runAsNonRoot: true
   # runAsUser: 1000
 
-service:
-  type: ClusterIP
-  port: 80
-
 resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious
   # choice for the user. This also increases chances charts run on environments with little
@@ -71,4 +72,6 @@ affinity: {}
 
 prometheus:
   # enable monitor manifest deployment
-  enabed: false
+  enabled: true
+  additionalLabels:
+    release: prometheus
