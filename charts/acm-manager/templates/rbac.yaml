@@ -176,18 +176,3 @@ subjects:
 - kind: ServiceAccount
   name: {{ include "acm-manager.serviceAccountName" . }}
   namespace: {{ .Release.Namespace }}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ include "acm-manager.fullname" . }}-controller-manager-metrics-service
-  labels:
-    {{- include "acm-manager.labels" . | nindent 4 }}
-spec:
-  ports:
-  - name: https
-    port: 8443
-    protocol: TCP
-    targetPort: https
-  selector:
-    control-plane: controller-manager
