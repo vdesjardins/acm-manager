@@ -1,30 +1,37 @@
-{ go
-, gopls
-, kustomize
-, kubebuilder
-, kind
-, awscli2
-, kubectl
-, kubernetes-helm
-, gnumake
-, jq
-, envsubst
-, chart-testing
-, mkShell
+{
+  awscli2,
+  chart-testing,
+  envsubst,
+  gnumake,
+  go,
+  gopls,
+  jq,
+  kind,
+  kubebuilder,
+  kubectl,
+  kubernetes-code-generator,
+  kubernetes-controller-tools,
+  kubernetes-helm,
+  kustomize,
+  mkShell,
+  setup-envtest,
 }:
 mkShell {
   packages = [
+    awscli2
+    chart-testing
+    envsubst
+    gnumake
     go
     gopls
-    kustomize
-    kubebuilder
-    kind
-    awscli2
-    kubectl
-    kubernetes-helm
-    gnumake
     jq
-    envsubst
-    chart-testing
+    kind
+    kubebuilder
+    kubectl
+    kubernetes-code-generator
+    kubernetes-controller-tools
+    kubernetes-helm
+    kustomize
+    setup-envtest
   ];
 }
