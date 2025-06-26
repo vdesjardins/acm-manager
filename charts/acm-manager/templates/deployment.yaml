@@ -48,6 +48,13 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            {{- if .Values.aws.region }}
+            - name: AWS_REGION
+              value: {{ .Values.aws.region }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ .Values.aws.region }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -74,4 +81,3 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-

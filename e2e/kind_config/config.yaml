@@ -1,24 +1,33 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
-featureGates:
-  "ServiceAccountIssuerDiscovery": true
 networking:
   apiServerAddress: "127.0.0.1"
   apiServerPort: 6443
 containerdConfigPatches:
-- |-
-  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
-    endpoint = ["http://kind-registry:5000"]
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
+      endpoint = ["http://kind-registry:5000"]
 nodes:
-- role: control-plane
-  image: "kindest/node:v1.26.6@sha256:5e5d789e90c1512c8c480844e0985bc3b4da4ba66179cc5b540fe5b785ca97b5"
-  kubeadmConfigPatches:
-  - |
-    kind: ClusterConfiguration
-    apiServer:
-        extraArgs:
-            api-audiences: "kubernetes.svc.default"
-            service-account-api-audiences: "cluster.identifier.kubernetes.domain"
-            service-account-issuer: "https://S3_BUCKET_NAME_PLACEHOLDER.s3.AWS_REGION_PLACEHOLDER.amazonaws.com/cluster/acm-cluster"
-            service-account-jwks-uri: "https://S3_BUCKET_NAME_PLACEHOLDER.s3.AWS_REGION_PLACEHOLDER.amazonaws.com/cluster/acm-cluster/openid/v1/jwks"
-            service-account-signing-key-file: "/etc/kubernetes/pki/sa.key"
+  - role: control-plane
+    image: "kindest/node:v1.31.9"
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+            extraArgs:
+                api-audiences: "kubernetes.svc.default,sts.amazonaws.com"
+                service-account-issuer: "https://S3_BUCKET_NAME_PLACEHOLDER.s3.AWS_REGION_PLACEHOLDER.amazonaws.com/cluster/acm-cluster"
+                service-account-jwks-uri: "https://S3_BUCKET_NAME_PLACEHOLDER.s3.AWS_REGION_PLACEHOLDER.amazonaws.com/cluster/acm-cluster/openid/v1/jwks"
+                service-account-signing-key-file: "/etc/kubernetes/pki/sa.key"
+      - |
+        kind: KubeletConfiguration
+        cgroupDriver: systemd
+        failSwapOn: false
+        featureGates:
+          KubeletInUserNamespace: true
+        systemReserved:
+          cpu: 100m
+          memory: 100Mi
+        kubeReserved:
+          cpu: 100m
+          memory: 100Mi

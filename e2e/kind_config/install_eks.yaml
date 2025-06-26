@@ -107,7 +107,7 @@ spec:
       serviceAccountName: pod-identity-webhook
       containers:
         - name: pod-identity-webhook
-          image: public.ecr.aws/perplexed/amazon-eks-pod-identity-webhook:latest
+          image: public.ecr.aws/eks/amazon-eks-pod-identity-webhook:latest
           imagePullPolicy: IfNotPresent
           command:
             - /webhook
@@ -118,6 +118,12 @@ spec:
             - --token-audience=sts.amazonaws.com
             - --logtostderr
             - --aws-default-region=$AWS_REGION
+            - --token-expiration=86400
+            - --token-mount-path=/var/run/secrets/eks.amazonaws.com/serviceaccount
+            - --v=10
+          env:
+            - name: TZ
+              value: "Etc/UTC"
           volumeMounts:
             - name: cert
               mountPath: "/etc/webhook/certs"
@@ -170,7 +176,7 @@ spec:
     name: selfsigned-issuer
     kind: ClusterIssuer
 ---
-apiVersion: admissionregistration.k8s.io/v1beta1
+apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
   name: pod-identity-webhook
@@ -178,16 +184,23 @@ metadata:
   annotations:
     cert-manager.io/inject-ca-from: default/pod-identity-webhook
 webhooks:
-  - name: pod-identity-webhook.amazonaws.com
-    failurePolicy: Ignore
-    clientConfig:
-      service:
-        name: pod-identity-webhook
-        namespace: default
-        path: "/mutate"
-    rules:
-      - operations: [ "CREATE" ]
-        apiGroups: [""]
-        apiVersions: ["v1"]
-        resources: ["pods"]
-        scope: "*"
+- name: pod-identity-webhook.amazonaws.com
+  failurePolicy: Ignore
+  clientConfig:
+    service:
+      name: pod-identity-webhook
+      namespace: default
+      path: "/mutate"
+  rules:
+  - operations: [ "CREATE" ]
+    apiGroups: [""]
+    apiVersions: ["v1"]
+    resources: ["pods"]
+    scope: "*"
+  admissionReviewVersions: ["v1beta1"]
+  sideEffects: None
+  namespaceSelector:
+    matchExpressions:
+    - key: kubernetes.io/metadata.name
+      operator: NotIn
+      values: ["kube-system", "kube-public"]

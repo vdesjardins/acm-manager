@@ -55,7 +55,7 @@ spec:
       serviceAccountName: external-dns
       containers:
       - name: external-dns
-        image: k8s.gcr.io/external-dns/external-dns:v0.7.6
+        image: docker.io/bitnami/external-dns:0.10.1
         args:
         - --source=service
         - --source=ingress
@@ -65,6 +65,9 @@ spec:
         - --registry=txt
         - --txt-owner-id=testing
         - --txt-prefix=txt-
+        env:
+        - name: AWS_REGION
+          value: ca-central-1
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -80,4 +83,3 @@ spec:
         supplementalGroups:
           - 65534
         fsGroup: 65534 # For ExternalDNS to be able to read Kubernetes and AWS token files
-
