@@ -85,13 +85,13 @@ generate: ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject
 k8s-client-gen:
 	rm -rf pkg/client/{applyconfiguration,versioned}
 	@echo ">> generating pkg/client/applyconfiguration..."
-	@$(shell go env GOPATH)/bin/applyconfiguration-gen \
+	@applyconfiguration-gen \
 		--go-header-file hack/boilerplate.go.txt \
 		--output-dir pkg/client/applyconfiguration \
 		--output-pkg "$(GO_MODULE)/pkg/client/applyconfiguration" \
 		$(GO_MODULE)/pkg/apis/acmmanager/v1alpha1
 	@echo ">> generating pkg/client/versioned..."
-	@$(shell go env GOPATH)/bin/client-gen \
+	@client-gen \
 		--go-header-file hack/boilerplate.go.txt \
 		--input-base "" \
 		--apply-configuration-package "$(GO_MODULE)/pkg/client/applyconfiguration" \

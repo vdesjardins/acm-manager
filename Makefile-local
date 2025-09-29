@@ -16,8 +16,8 @@ KIND ?= KIND_EXPERIMENTAL_PROVIDER=podman kind
 CT ?= ct
 DOCKER ?= podman
 GO ?= go
-APPLYCONFIGURATION_GEN ?= $(shell go env GOPATH)/bin/applyconfiguration-gen
-CLIENT_GEN ?= $(shell go env GOPATH)/bin/client-gen
+APPLYCONFIGURATION_GEN ?= applyconfiguration-gen
+CLIENT_GEN ?= client-gen
 
 # Tool Versions
 CODE_GENERATOR_VERSION ?= v0.32.1
@@ -70,7 +70,7 @@ setup-aws: ## Setup AWS resources for OIDC
 
 ##@ Development
 .PHONY: manifests
-manifests: install-generators ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+manifests: ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	$(KUSTOMIZE) build config/crd > ./charts/acm-manager/crds/crds.yaml
 
@@ -78,27 +78,9 @@ manifests: install-generators ## Generate WebhookConfiguration, ClusterRole and 
 API_GROUPS = $(shell find pkg/apis -mindepth 1 -maxdepth 1 -type d -not -path "*/\.*" | xargs -n1 basename)
 API_GROUP_VERSIONS = $(shell find pkg/apis -mindepth 2 -maxdepth 2 -type d -not -path "*/\.*" | sed 's|pkg/apis/||' | tr '/' '.')
 
-.PHONY: install-generators
-install-generators:
-	@echo ">> checking if code generators are already installed..."
-	@if ! which $(shell go env GOPATH)/bin/client-gen >/dev/null 2>&1; then \
-		echo "Installing client-gen..."; \
-		go install k8s.io/code-generator/cmd/client-gen@$(CODE_GENERATOR_VERSION); \
-	fi
-	@if ! which $(shell go env GOPATH)/bin/applyconfiguration-gen >/dev/null 2>&1; then \
-		echo "Installing applyconfiguration-gen..."; \
-		go install k8s.io/code-generator/cmd/applyconfiguration-gen@$(CODE_GENERATOR_VERSION); \
-	fi
-	@if ! which $(shell go env GOPATH)/bin/controller-gen >/dev/null 2>&1 || \
-	   ! $(shell go env GOPATH)/bin/controller-gen --version | grep -q $(CONTROLLER_TOOLS_VERSION); then \
-		echo "Installing controller-gen..."; \
-		go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION); \
-	fi
-
-	@echo "✅ Code generators are ready"
 
 .PHONY: generate
-generate: install-generators ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	@echo ">> cleaning old generated files..."
 	@rm -rf pkg/client/{applyconfiguration,versioned}
 	@echo ">> running k8s-client-gen..."
@@ -108,7 +90,7 @@ generate: install-generators ## Generate code containing DeepCopy, DeepCopyInto,
 	@echo "✅ Code generation completed"
 
 .PHONY: k8s-client-gen
-k8s-client-gen: install-generators
+k8s-client-gen:
 	rm -rf pkg/client/{applyconfiguration,versioned}
 	@echo ">> generating pkg/client/applyconfiguration..."
 	@$(shell go env GOPATH)/bin/applyconfiguration-gen \
@@ -117,7 +99,7 @@ k8s-client-gen: install-generators
 		--output-pkg "$(GO_MODULE)/pkg/client/applyconfiguration" \
 		$(GO_MODULE)/pkg/apis/acmmanager/v1alpha1
 	@echo ">> generating pkg/client/versioned..."
-	@$(shell go env GOPATH)/bin/client-gen \
+	@client-gen \
 		--go-header-file hack/boilerplate.go.txt \
 		--input-base "" \
 		--apply-configuration-package "$(GO_MODULE)/pkg/client/applyconfiguration" \
