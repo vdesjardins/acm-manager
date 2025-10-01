@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM docker.io/golang:1.24 as builder
+FROM docker.io/golang:1.25 AS builder
 
 WORKDIR /workspace
 # Copy the Go Modules manifests

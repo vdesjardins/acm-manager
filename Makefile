@@ -155,7 +155,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(DOCKER) build -t ${IMG} .
+	$(DOCKER) build -t ${IMG} . --load
 
 .PHONY: docker-push
 docker-push: docker-build docker-push-local ## Push docker image with the manager.
@@ -165,9 +165,25 @@ docker-push: docker-build docker-push-local ## Push docker image with the manage
 docker-push-local:
 	@echo "🚀 Pushing image to local registry..."
 	$(DOCKER) tag ${IMG} ${LOCAL_IMAGE}
-	#$(DOCKER) push ${LOCAL_IMAGE}
 	$(DOCKER) push ${LOCAL_IMAGE}
 	@echo "✅ Image pushed to local registry successfully"
+
+# PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
+# architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
+# - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/
+# - have enabled BuildKit. More info: https://docs.docker.com/develop/develop-images/build_enhancements/
+# - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
+# To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
+PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
+.PHONY: docker-buildx
+docker-buildx: ## Build and push docker image for the manager for cross-platform support
+	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
+	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
+	- $(CONTAINER_TOOL) buildx create --name acm-manager-builder
+	$(CONTAINER_TOOL) buildx use acm-manager-builder
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx rm acm-manager-builder
+	rm Dockerfile.cross
 
 ##@ Deployment
 
@@ -256,21 +272,26 @@ deploy-external-dns: ## Deploy external-dns
 		sleep 5; \
 	done
 	@echo "✅ pod-identity-webhook is fully ready, proceeding with external-dns deployment..."
-	@echo "🔧 Ensuring external-dns namespace exists..."
-	@kubectl create namespace external-dns --dry-run=client -o yaml --kubeconfig=${TEST_KUBECONFIG_LOCATION} | kubectl apply -f - --kubeconfig=${TEST_KUBECONFIG_LOCATION}
-	@echo "🔧 Deploying external-dns CRDs..."
-	@kubectl apply -f config/contrib/external-dns/crd-manifest.yaml --kubeconfig=${TEST_KUBECONFIG_LOCATION}
-	@echo "🔧 Deploying external-dns..."
-	@kubectl apply -f config/contrib/external-dns/manifests.yaml --kubeconfig=${TEST_KUBECONFIG_LOCATION}
-	@echo "🔧 Setting up external-dns service account with IAM role annotation..."
-	@kubectl annotate serviceaccount external-dns \
-		-n default \
-		eks.amazonaws.com/role-arn=arn:aws:iam::$(AWS_ACCOUNT):role/external-dns \
-		--overwrite \
-		--kubeconfig=${TEST_KUBECONFIG_LOCATION}
-	@echo "⏳ Waiting for external-dns deployment to be ready..."
-	@kubectl rollout status deployment/external-dns -n default --timeout=120s --kubeconfig=${TEST_KUBECONFIG_LOCATION}
-	@echo "✅ external-dns deployment completed successfully"
+	@if ! $(HELM) repo add external-dns https://kubernetes-sigs.github.io/external-dns/ --force-update; then \
+		echo "❌ Failed to add external-dns Helm repository"; \
+		exit 1; \
+	fi
+	@if ! $(HELM) repo update; then \
+		echo "❌ Failed to update Helm repositories"; \
+		exit 1; \
+	fi
+	@echo "📦 Installing externa-dns with CRDs..."
+	@if ! $(HELM) upgrade --install external-dns external-dns/external-dns \
+		--namespace external-dns \
+		--create-namespace \
+		--version v1.19.0 \
+		--set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="arn:aws:iam::$(AWS_ACCOUNT):role/external-dns" \
+		--kubeconfig=${TEST_KUBECONFIG_LOCATION} \
+		--wait --timeout=180s; then \
+		echo "❌ Failed to install external-dns via Helm"; \
+		$(HELM) status external-dns -n external-dns --kubeconfig=${TEST_KUBECONFIG_LOCATION}; \
+		exit 1; \
+	fi
 
 .PHONY: validate-external-dns-oidc
 validate-external-dns-oidc: ## Validate external-dns pod has proper OIDC injection with retry logic
@@ -304,13 +325,13 @@ validate-external-dns-oidc: ## Validate external-dns pod has proper OIDC injecti
 validate-external-dns-oidc-attempt: ## Single validation attempt for external-dns OIDC injection
 	@echo "⏳ Waiting for external-dns pod to be running..."
 	@for i in {1..10}; do \
-		if kubectl get pods -n default -l app=external-dns -o jsonpath='{.items[0].status.phase}' --kubeconfig=${TEST_KUBECONFIG_LOCATION} | grep -q "Running"; then \
+		if kubectl get pods -n external-dns -l app.kubernetes.io/instance=external-dns -o jsonpath='{.items[0].status.phase}' --kubeconfig=${TEST_KUBECONFIG_LOCATION} | grep -q "Running"; then \
 			echo "✅ external-dns pod is running"; \
 			break; \
 		fi; \
 		if [ "$$i" = "10" ]; then \
 			echo "❌ external-dns pod failed to reach Running state"; \
-			kubectl get pods -n default -l app=external-dns --kubeconfig=${TEST_KUBECONFIG_LOCATION}; \
+			kubectl get pods -n external-dns -l app.kubernetes.io/instance=external-dns --kubeconfig=${TEST_KUBECONFIG_LOCATION}; \
 			exit 1; \
 		fi; \
 		echo "Waiting for external-dns pod (attempt $$i/10)..."; \
@@ -318,40 +339,40 @@ validate-external-dns-oidc-attempt: ## Single validation attempt for external-dn
 	done
 
 	@echo "🔍 Checking AWS IAM role environment variables..."
-	@POD_NAME=$$(kubectl get pods -n default -l app=external-dns -o jsonpath='{.items[0].metadata.name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}) && \
-	if ! kubectl get pods -n default $$POD_NAME -o jsonpath='{.spec.containers[0].env[*].name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION} | grep -q "AWS_ROLE_ARN"; then \
+	@POD_NAME=$$(kubectl get pods -n external-dns -l app.kubernetes.io/instance=external-dns -o jsonpath='{.items[0].metadata.name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}) && \
+	if ! kubectl get pods -n external-dns $$POD_NAME -o jsonpath='{.spec.containers[0].env[*].name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION} | grep -q "AWS_ROLE_ARN"; then \
 		echo "❌ AWS_ROLE_ARN environment variable not found in external-dns pod"; \
 		echo "Pod identity webhook might not be working correctly"; \
 		exit 1; \
 	else \
-		AWS_ROLE_ARN=$$(kubectl get pods -n default $$POD_NAME -o jsonpath='{.spec.containers[0].env[?(@.name=="AWS_ROLE_ARN")].value}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}); \
+		AWS_ROLE_ARN=$$(kubectl get pods -n external-dns $$POD_NAME -o jsonpath='{.spec.containers[0].env[?(@.name=="AWS_ROLE_ARN")].value}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}); \
 		echo "✅ AWS_ROLE_ARN environment variable properly injected: $$AWS_ROLE_ARN"; \
 	fi
 
 	@echo "🔍 Checking AWS web identity token file..."
-	@POD_NAME=$$(kubectl get pods -n default -l app=external-dns -o jsonpath='{.items[0].metadata.name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}) && \
-	if ! kubectl get pods -n default $$POD_NAME -o jsonpath='{.spec.containers[0].env[*].name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION} | grep -q "AWS_WEB_IDENTITY_TOKEN_FILE"; then \
+	@POD_NAME=$$(kubectl get pods -n external-dns -l app.kubernetes.io/instance=external-dns -o jsonpath='{.items[0].metadata.name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}) && \
+	if ! kubectl get pods -n external-dns $$POD_NAME -o jsonpath='{.spec.containers[0].env[*].name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION} | grep -q "AWS_WEB_IDENTITY_TOKEN_FILE"; then \
 		echo "❌ AWS_WEB_IDENTITY_TOKEN_FILE environment variable not found in external-dns pod"; \
 		echo "Pod identity webhook might not be working correctly"; \
 		exit 1; \
 	else \
-		TOKEN_FILE=$$(kubectl get pods -n default $$POD_NAME -o jsonpath='{.spec.containers[0].env[?(@.name=="AWS_WEB_IDENTITY_TOKEN_FILE")].value}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}); \
+		TOKEN_FILE=$$(kubectl get pods -n external-dns $$POD_NAME -o jsonpath='{.spec.containers[0].env[?(@.name=="AWS_WEB_IDENTITY_TOKEN_FILE")].value}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}); \
 		echo "✅ AWS_WEB_IDENTITY_TOKEN_FILE environment variable properly injected: $$TOKEN_FILE"; \
 	fi
 
 	@echo "🔍 Checking AWS_REGION environment variable..."
-	@POD_NAME=$$(kubectl get pods -n default -l app=external-dns -o jsonpath='{.items[0].metadata.name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}) && \
-	if ! kubectl get pods -n default $$POD_NAME -o jsonpath='{.spec.containers[0].env[*].name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION} | grep -q "AWS_REGION"; then \
+	@POD_NAME=$$(kubectl get pods -n external-dns -l app.kubernetes.io/instance=external-dns -o jsonpath='{.items[0].metadata.name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}) && \
+	if ! kubectl get pods -n external-dns $$POD_NAME -o jsonpath='{.spec.containers[0].env[*].name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION} | grep -q "AWS_REGION"; then \
 		echo "❌ AWS_REGION environment variable not found in external-dns pod"; \
 		exit 1; \
 	else \
-		AWS_REGION=$$(kubectl get pods -n default $$POD_NAME -o jsonpath='{.spec.containers[0].env[?(@.name=="AWS_REGION")].value}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}); \
+		AWS_REGION=$$(kubectl get pods -n external-dns $$POD_NAME -o jsonpath='{.spec.containers[0].env[?(@.name=="AWS_REGION")].value}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}); \
 		echo "✅ AWS_REGION environment variable properly set: $$AWS_REGION"; \
 	fi
 
 	@echo "🔍 Checking for IAM token volume..."
-	@POD_NAME=$$(kubectl get pods -n default -l app=external-dns -o jsonpath='{.items[0].metadata.name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}) && \
-	if ! kubectl get pods -n default $$POD_NAME -o jsonpath='{.spec.volumes[*].name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION} | grep -q "aws-iam-token"; then \
+	@POD_NAME=$$(kubectl get pods -n external-dns -l app.kubernetes.io/instance=external-dns -o jsonpath='{.items[0].metadata.name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}) && \
+	if ! kubectl get pods -n external-dns $$POD_NAME -o jsonpath='{.spec.volumes[*].name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION} | grep -q "aws-iam-token"; then \
 		echo "❌ aws-iam-token volume not found in external-dns pod"; \
 		echo "Pod identity webhook might not be mounting the token correctly"; \
 		exit 1; \
@@ -360,13 +381,13 @@ validate-external-dns-oidc-attempt: ## Single validation attempt for external-dn
 	fi
 
 	@echo "🔍 Checking for IAM token volume mount..."
-	@POD_NAME=$$(kubectl get pods -n default -l app=external-dns -o jsonpath='{.items[0].metadata.name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}) && \
-	if ! kubectl get pods -n default $$POD_NAME -o jsonpath='{.spec.containers[0].volumeMounts[*].name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION} | grep -q "aws-iam-token"; then \
+	@POD_NAME=$$(kubectl get pods -n external-dns -l app.kubernetes.io/instance=external-dns -o jsonpath='{.items[0].metadata.name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}) && \
+	if ! kubectl get pods -n external-dns $$POD_NAME -o jsonpath='{.spec.containers[0].volumeMounts[*].name}' --kubeconfig=${TEST_KUBECONFIG_LOCATION} | grep -q "aws-iam-token"; then \
 		echo "❌ aws-iam-token volume not mounted in external-dns container"; \
 		echo "Pod identity webhook might not be mounting the token correctly"; \
 		exit 1; \
 	else \
-		MOUNT_PATH=$$(kubectl get pods -n default $$POD_NAME -o jsonpath='{.spec.containers[0].volumeMounts[?(@.name=="aws-iam-token")].mountPath}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}); \
+		MOUNT_PATH=$$(kubectl get pods -n external-dns $$POD_NAME -o jsonpath='{.spec.containers[0].volumeMounts[?(@.name=="aws-iam-token")].mountPath}' --kubeconfig=${TEST_KUBECONFIG_LOCATION}); \
 		echo "✅ aws-iam-token volume properly mounted at path: $$MOUNT_PATH"; \
 	fi
 
@@ -517,7 +538,7 @@ deploy-cert-manager: ## Deploy cert-manager to the K8s cluster
 	@if ! $(HELM) upgrade --install cert-manager jetstack/cert-manager \
 		--namespace cert-manager \
 		--create-namespace \
-		--version v1.16.2 \
+		--version v1.18.2 \
 		--set crds.enabled=true \
 		--kubeconfig=${TEST_KUBECONFIG_LOCATION} \
 		--wait --timeout=180s; then \

@@ -35,7 +35,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	pkgscheme "sigs.k8s.io/controller-runtime/pkg/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	dnsendpoint "sigs.k8s.io/external-dns/endpoint"
+	dnsendpoint "sigs.k8s.io/external-dns/apis/v1alpha1"
 
 	certificatev1alpha1 "vdesjardins/acm-manager/pkg/apis/acmmanager/v1alpha1"
 	"vdesjardins/acm-manager/pkg/controllers"

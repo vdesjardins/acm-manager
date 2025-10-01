@@ -33,7 +33,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	pkgscheme "sigs.k8s.io/controller-runtime/pkg/scheme"
-	dnsendpoint "sigs.k8s.io/external-dns/endpoint"
+	dnsendpoint "sigs.k8s.io/external-dns/apis/v1alpha1"
 
 	certificatev1alpha1 "vdesjardins/acm-manager/pkg/apis/acmmanager/v1alpha1"
 	//+kubebuilder:scaffold:imports

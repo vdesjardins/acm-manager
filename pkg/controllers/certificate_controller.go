@@ -42,7 +42,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	dnsendpoint "sigs.k8s.io/external-dns/endpoint"
+	dnsendpoint "sigs.k8s.io/external-dns/apis/v1alpha1"
+	endpoint "sigs.k8s.io/external-dns/endpoint"
 
 	certificatev1alpha1 "vdesjardins/acm-manager/pkg/apis/acmmanager/v1alpha1"
 	certificateclient "vdesjardins/acm-manager/pkg/client/versioned"
@@ -491,32 +492,32 @@ func (r *CertificateReconciler) cleanupACMCertificates(ctx context.Context, cert
 }
 
 func (r *CertificateReconciler) syncDNSEndpoints(ctx context.Context, cert *certificatev1alpha1.Certificate) error {
-	endpoint := &dnsendpoint.DNSEndpoint{}
+	dnsEndpoint := &dnsendpoint.DNSEndpoint{}
 	nsName := types.NamespacedName{Name: cert.Name, Namespace: cert.Namespace}
 	newEndpoint := false
-	if err := r.Get(ctx, nsName, endpoint); err != nil {
+	if err := r.Get(ctx, nsName, dnsEndpoint); err != nil {
 		if client.IgnoreNotFound(err) != nil {
 			return fmt.Errorf("unable to list DNSEndpoints: %w", err)
 		}
 
 		newEndpoint = true
-		endpoint.Name = cert.Name
-		endpoint.Namespace = cert.Namespace
-		ctrl.SetControllerReference(metav1.Object(cert), endpoint, r.Scheme)
+		dnsEndpoint.Name = cert.Name
+		dnsEndpoint.Namespace = cert.Namespace
+		ctrl.SetControllerReference(metav1.Object(cert), dnsEndpoint, r.Scheme)
 	}
 
-	endpoints := []*dnsendpoint.Endpoint{}
+	endpoints := []*endpoint.Endpoint{}
 
 	for _, rr := range cert.Status.ResourceRecords {
-		endpoints = append(endpoints, dnsendpoint.NewEndpoint(rr.Name, rr.Type, rr.Value))
+		endpoints = append(endpoints, endpoint.NewEndpoint(rr.Name, rr.Type, rr.Value))
 	}
-	endpoint.Spec.Endpoints = endpoints
+	dnsEndpoint.Spec.Endpoints = endpoints
 
 	var err error
 	if newEndpoint {
-		err = r.Create(ctx, endpoint)
+		err = r.Create(ctx, dnsEndpoint)
 	} else {
-		err = r.Update(ctx, endpoint)
+		err = r.Update(ctx, dnsEndpoint)
 	}
 	if err != nil {
 		return fmt.Errorf("unable to save DNSEndpoint in kubernetes: %w", err)

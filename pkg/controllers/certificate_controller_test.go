@@ -29,7 +29,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	dnsendpoint "sigs.k8s.io/external-dns/endpoint"
+	dnsendpoint "sigs.k8s.io/external-dns/apis/v1alpha1"
 )
 
 type acmClientMock struct{}
