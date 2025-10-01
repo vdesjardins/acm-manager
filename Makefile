@@ -286,6 +286,7 @@ deploy-external-dns: ## Deploy external-dns
 		--create-namespace \
 		--version v1.19.0 \
 		--set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="arn:aws:iam::$(AWS_ACCOUNT):role/external-dns" \
+		--set sources="{ingress,service,crd}" \
 		--kubeconfig=${TEST_KUBECONFIG_LOCATION} \
 		--wait --timeout=180s; then \
 		echo "❌ Failed to install external-dns via Helm"; \
@@ -457,8 +458,8 @@ create-local-registry: ## Create and configure local registry for Kind cluster
 .PHONY: setup-eks-webhook
 setup-eks-webhook: ## Setup EKS webhook for OIDC on Kind cluster
 	@echo "📢 Setting up EKS pod identity webhook..."
-	@kubectl create ns eks-pod-identity-webhook || true
-	@kubectl apply -f ./e2e/kind_config/install_eks.yaml
+	@envsubst <  ./e2e/kind_config/install_eks.yaml >/tmp/install_eks.yaml
+	@kubectl apply -f /tmp/install_eks.yaml --kubeconfig=${TEST_KUBECONFIG_LOCATION}
 	@echo "⏳ Waiting for pod-identity-webhook deployment to be ready..."
 	@kubectl rollout status deployment/pod-identity-webhook -n default --timeout=300s
 	@echo "✅ pod-identity-webhook is ready"
