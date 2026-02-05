@@ -21,8 +21,11 @@ package v1alpha1
 // ResourceRecordApplyConfiguration represents a declarative configuration of the ResourceRecord type for use
 // with apply.
 type ResourceRecordApplyConfiguration struct {
-	Name  *string `json:"name,omitempty"`
-	Type  *string `json:"type,omitempty"`
+	// Name
+	Name *string `json:"name,omitempty"`
+	// The type of DNS record. Currently this can be CNAME.
+	Type *string `json:"type,omitempty"`
+	// The value of the CNAME record to add to DNS
 	Value *string `json:"value,omitempty"`
 }
 

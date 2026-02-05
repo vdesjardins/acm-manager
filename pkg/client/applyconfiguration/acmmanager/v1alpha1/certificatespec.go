@@ -20,8 +20,12 @@ package v1alpha1
 
 // CertificateSpecApplyConfiguration represents a declarative configuration of the CertificateSpec type for use
 // with apply.
+//
+// CertificateSpec defines the desired state of Certificate
 type CertificateSpecApplyConfiguration struct {
-	CommonName              *string  `json:"commonName,omitempty"`
+	// DNS Common Name
+	CommonName *string `json:"commonName,omitempty"`
+	// DNS Subject Alternative Names
 	SubjectAlternativeNames []string `json:"subjectAlternativeNames,omitempty"`
 }
 

@@ -26,12 +26,19 @@ import (
 
 // CertificateStatusApplyConfiguration represents a declarative configuration of the CertificateStatus type for use
 // with apply.
+//
+// CertificateStatus defines the observed state of Certificate
 type CertificateStatusApplyConfiguration struct {
-	CertificateArn  *string                                   `json:"certificateArn,omitempty"`
-	ResourceRecords []ResourceRecordApplyConfiguration        `json:"resourceRecords,omitempty"`
-	Status          *acmmanagerv1alpha1.CertificateStatusType `json:"status,omitempty"`
-	NotBefore       *v1.Time                                  `json:"notBefore,omitempty"`
-	NotAfter        *v1.Time                                  `json:"notAfter,omitempty"`
+	// Certificate ARN
+	CertificateArn *string `json:"certificateArn,omitempty"`
+	// Resource Records for DNS validation
+	ResourceRecords []ResourceRecordApplyConfiguration `json:"resourceRecords,omitempty"`
+	// Certificate status
+	Status *acmmanagerv1alpha1.CertificateStatusType `json:"status,omitempty"`
+	// Certificate not before date
+	NotBefore *v1.Time `json:"notBefore,omitempty"`
+	// Certificate not after date
+	NotAfter *v1.Time `json:"notAfter,omitempty"`
 }
 
 // CertificateStatusApplyConfiguration constructs a declarative configuration of the CertificateStatus type for use with
