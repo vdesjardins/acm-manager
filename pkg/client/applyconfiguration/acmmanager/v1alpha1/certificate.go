@@ -26,6 +26,8 @@ import (
 
 // CertificateApplyConfiguration represents a declarative configuration of the Certificate type for use
 // with apply.
+//
+// Certificate is the Schema for the certificates API
 type CertificateApplyConfiguration struct {
 	v1.TypeMetaApplyConfiguration    `json:",inline"`
 	*v1.ObjectMetaApplyConfiguration `json:"metadata,omitempty"`
@@ -43,6 +45,7 @@ func Certificate(name, namespace string) *CertificateApplyConfiguration {
 	b.WithAPIVersion("acm-manager.io/v1alpha1")
 	return b
 }
+
 func (b CertificateApplyConfiguration) IsApplyConfiguration() {}
 
 // WithKind sets the Kind field in the declarative configuration to the given value

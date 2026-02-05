@@ -1,7 +1,7 @@
 # Image URL to use all building/pushing image targets
 IMG ?= docker.io/vdesjardins/acm-manager:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.31.0
+ENVTEST_K8S_VERSION = 1.35.0
 
 ## Tool Binaries
 KUBECTL ?= kubectl
@@ -132,8 +132,8 @@ test: manifests generate fmt vet ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GO) test ./... -coverprofile cover.out
 
 .PHONY: test-unit
-test-unit: manifests generate fmt vet ## Run only unit tests (no e2e tests)
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GO) test ./pkg/... -coverprofile cover.out
+test-unit: manifests generate ## Run only unit tests (no e2e tests)
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GO) test -v ./pkg/... -coverprofile cover.out
 
 ##@ Build
 
@@ -165,7 +165,7 @@ docker-push: docker-build docker-push-local ## Push docker image with the manage
 docker-push-local:
 	@echo "🚀 Pushing image to local registry..."
 	$(DOCKER) tag ${IMG} ${LOCAL_IMAGE}
-	$(DOCKER) push ${LOCAL_IMAGE}
+	$(DOCKER) push ${LOCAL_IMAGE} --tls-verify=false
 	@echo "✅ Image pushed to local registry successfully"
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
@@ -202,7 +202,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
+	$(KUSTOMIZE) build | $(KUBECTL) apply -f -
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
@@ -219,6 +219,7 @@ CERT_MANAGER_VERSION ?= 1.16.2
 
 REGISTRY_NAME := "kind-registry"
 REGISTRY_PORT := 5000
+REGISTRY_DIR := /etc/containerd/certs.d/localhost:$(REGISTRY_PORT)
 LOCAL_IMAGE := "localhost:${REGISTRY_PORT}/acm-manager"
 NAMESPACE := acm-manager
 SERVICE_ACCOUNT := ${NAMESPACE}-sa
@@ -231,7 +232,7 @@ endef
 
 AWS_ACCOUNT := $(call get_aws_account)
 ifndef AWS_ACCOUNT
-$(error AWS account could not be retrieved)
+$(warning AWS account could not be retrieved)
 endif
 
 OIDC_ACM_MANAGER_IAM_ROLE := arn:aws:iam::$(AWS_ACCOUNT):role/acm-manager
@@ -284,7 +285,7 @@ deploy-external-dns: ## Deploy external-dns
 	@if ! $(HELM) upgrade --install external-dns external-dns/external-dns \
 		--namespace external-dns \
 		--create-namespace \
-		--version v1.19.0 \
+		--version v1.20.0 \
 		--set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="arn:aws:iam::$(AWS_ACCOUNT):role/external-dns" \
 		--set sources="{ingress,service,crd}" \
 		--kubeconfig=${TEST_KUBECONFIG_LOCATION} \
@@ -393,14 +394,21 @@ validate-external-dns-oidc-attempt: ## Single validation attempt for external-dn
 	fi
 
 .PHONY: kind-cluster
-kind-cluster: check-env-vars ## Create a Kind cluster with required configuration
+kind-cluster: check-env-vars create-local-registry ## Create a Kind cluster with required configuration
 	@echo "🚀 Creating Kind cluster ..."
 	@echo "🔧 Preparing Kind configuration..."
 	@if $(KIND) get clusters | grep -q "${K8S_CLUSTER_NAME}"; then \
 		echo "ℹ️ Kind cluster ${K8S_CLUSTER_NAME} already exists"; \
 	else \
 		echo "📦 Creating Kind cluster..."; \
-		cat e2e/kind_config/config.yaml | sed "s/S3_BUCKET_NAME_PLACEHOLDER/$$OIDC_S3_BUCKET_NAME/g" | sed "s/AWS_REGION_PLACEHOLDER/$$AWS_REGION/g" | $(KIND) create cluster --name=${K8S_CLUSTER_NAME} --config=-; \
+		$(KIND) --version
+		cat e2e/kind_config/config.yaml | sed "s/S3_BUCKET_NAME_PLACEHOLDER/$$OIDC_S3_BUCKET_NAME/g" | sed "s/AWS_REGION_PLACEHOLDER/$$AWS_REGION/g" | $(KIND) create cluster --verbosity 6 --name=${K8S_CLUSTER_NAME} --config=-; \
+		echo "Adding local registry config to cluster nodes"
+		for node in $$(kind get nodes --name $(K8S_CLUSTER_NAME)); do \
+			echo "Configuring kubernetes node named $$node with local container registry"; \
+			$(DOCKER) exec "$$node" mkdir -p "$(REGISTRY_DIR)"; \
+			printf '%s\n' '[host."http://'"$(REGISTRY_NAME)"':$(REGISTRY_PORT)"]' | $(DOCKER) exec -i "$$node" sh -c 'cat > "$(REGISTRY_DIR)/hosts.toml"'; \
+		done
 	fi
 	@echo "🔧 Generating kubeconfig..."
 	@if ! $(KIND) get kubeconfig --name ${K8S_CLUSTER_NAME} > ${TEST_KUBECONFIG_LOCATION}; then \
@@ -434,7 +442,7 @@ create-local-registry: ## Create and configure local registry for Kind cluster
 		fi; \
 	else \
 		echo "📦 Creating new registry container..."; \
-		if ! $(DOCKER) run -d --restart=always -p "127.0.0.1:${REGISTRY_PORT}:5000" --name ${REGISTRY_NAME} docker.io/registry:2; then \
+		if ! $(DOCKER) run -d --restart=always -p "127.0.0.1:${REGISTRY_PORT}:${REGISTRY_PORT}" --name ${REGISTRY_NAME} docker.io/registry:2; then \
 			echo "❌ Failed to create registry container"; \
 			exit 1; \
 		fi; \
@@ -539,7 +547,7 @@ deploy-cert-manager: ## Deploy cert-manager to the K8s cluster
 	@if ! $(HELM) upgrade --install cert-manager jetstack/cert-manager \
 		--namespace cert-manager \
 		--create-namespace \
-		--version v1.18.2 \
+		--version v1.19.3 \
 		--set crds.enabled=true \
 		--kubeconfig=${TEST_KUBECONFIG_LOCATION} \
 		--wait --timeout=180s; then \
@@ -681,7 +689,7 @@ uninstall-acm-manager-local:
 upgrade-acm-manager-local: uninstall-acm-manager-local install-acm-manager-local
 
 .PHONY: cluster
-cluster: generate setup-aws create-local-registry kind-cluster deploy-cert-manager setup-eks-webhook deploy-external-dns validate-external-dns-oidc install-acm-manager-local ## Sets up a kind cluster using the latest commit on the current branch
+cluster: generate setup-aws kind-cluster deploy-cert-manager setup-eks-webhook deploy-external-dns validate-external-dns-oidc install-acm-manager-local ## Sets up a kind cluster using the latest commit on the current branch
 	@echo "🔵 Running final validation of all components..."
 	@$(MAKE) validate-all
 	@echo "✅ Cluster setup completed successfully"

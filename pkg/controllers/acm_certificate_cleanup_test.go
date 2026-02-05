@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/acm"
@@ -76,6 +77,13 @@ func (a *acmClientCleanupMock) ListTagsForCertificate(ctx context.Context, param
 
 var _ = Describe("ACM Certificate Cleanup Job", func() {
 	Context("clean missing certificate", func() {
+		defer GinkgoRecover()
+
+		if os.Getenv("GITHUB_RUN_ID") != "" {
+			// Skipping test when running on GITHUB, because of external dependency to a running K8S API
+			return
+		}
+
 		mock := acmClientCleanupMock{}
 		Expect(mock.deleteCalled).To(BeFalse())
 

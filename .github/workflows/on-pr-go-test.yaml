@@ -6,25 +6,19 @@ jobs:
   build:
     name: Build and Test
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: "1.23"
-        id: go
-
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
 
-      - name: Get dependencies
-        run: |
-          go get -v -t -d ./...
-      - name: Build
-        run: go build -v .
+      - name: Set up nix action
+        uses: DeterminateSystems/determinate-nix-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
 
-      - name: Controller Test
+      - name: Build and run Unit tests
         run: |
-          # run test
-          # make test
+          source <(nix print-dev-env)
+          go get -v -t -d ./...
+          go build -v .
+          make test-unit
