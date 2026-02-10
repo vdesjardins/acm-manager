@@ -132,7 +132,7 @@ test: manifests generate fmt vet ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GO) test ./... -coverprofile cover.out
 
 .PHONY: test-unit
-test-unit: manifests generate ## Run only unit tests (no e2e tests)
+test-unit: manifests generate fmt vet ## Run only unit tests (no e2e tests)
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GO) test -v ./pkg/... -coverprofile cover.out
 
 ##@ Build
