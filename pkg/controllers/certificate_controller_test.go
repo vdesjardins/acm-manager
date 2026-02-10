@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"time"
+	"vdesjardins/acm-manager/pkg/controllers/external_api_clients"
 
 	certificatev1alpha1 "vdesjardins/acm-manager/pkg/apis/acmmanager/v1alpha1"
 
@@ -35,7 +36,7 @@ import (
 type acmClientMock struct{}
 
 func init() {
-	newAcmClient = func(service *acm.Client) acmAPI {
+	external_api_clients.NewAcmClient = func(service *acm.Client) external_api_clients.AcmAWSAPI {
 		return &acmClientMock{}
 	}
 }

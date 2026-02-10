@@ -2,17 +2,32 @@ package controllers
 
 import (
 	"context"
-	"os"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/acm"
 	acmtypes "github.com/aws/aws-sdk-go-v2/service/acm/types"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	apiV1 "vdesjardins/acm-manager/pkg/apis/acmmanager/v1alpha1"
+	"vdesjardins/acm-manager/pkg/controllers/external_api_clients"
 )
 
 type acmClientCleanupMock struct {
 	deleteCalled bool
+}
+
+type certificateClientCleanupMock struct {
+	getCalled bool
+}
+
+func (c *certificateClientCleanupMock) GetCertificateForNamespace(ctx context.Context, namespace string, certificateName string, options metav1.GetOptions) (*apiV1.Certificate, error) {
+	c.getCalled = true
+
+	return nil, errors.NewNotFound(schema.GroupResource{Group: "unit-test.com", Resource: "unit-test"},
+		"unit-test")
 }
 
 func (a *acmClientCleanupMock) DescribeCertificate(ctx context.Context, params *acm.DescribeCertificateInput, optFns ...func(*acm.Options)) (*acm.DescribeCertificateOutput, error) {
@@ -79,21 +94,25 @@ var _ = Describe("ACM Certificate Cleanup Job", func() {
 	Context("clean missing certificate", func() {
 		defer GinkgoRecover()
 
-		if os.Getenv("GITHUB_RUN_ID") != "" {
-			// Skipping test when running on GITHUB, because of external dependency to a running K8S API
-			return
-		}
+		acmClientMock := acmClientCleanupMock{}
+		Expect(acmClientMock.deleteCalled).To(BeFalse())
 
-		mock := acmClientCleanupMock{}
-		Expect(mock.deleteCalled).To(BeFalse())
-
-		oldClient := newAcmClient
-		newAcmClient = func(service *acm.Client) acmAPI {
-			return &mock
+		oldACMClient := external_api_clients.NewAcmClient
+		external_api_clients.NewAcmClient = func(service *acm.Client) external_api_clients.AcmAWSAPI {
+			return &acmClientMock
 		}
-		defer func() { newAcmClient = oldClient }()
+		defer func() { external_api_clients.NewAcmClient = oldACMClient }()
+
+		certificateClientMock := certificateClientCleanupMock{}
+		Expect(certificateClientMock.getCalled).To(BeFalse())
+		oldCertificateRestClient := external_api_clients.NewCertificateRestClient
+		external_api_clients.NewCertificateRestClient = func(ctx context.Context) (external_api_clients.CertificateRestAPI, error) {
+			return &certificateClientMock, nil
+		}
+		defer func() { external_api_clients.NewCertificateRestClient = oldCertificateRestClient }()
 
 		cleanupOrphanACMCertificates()
-		Expect(mock.deleteCalled).To(BeTrue())
+		Expect(acmClientMock.deleteCalled).To(BeTrue())
+		Expect(certificateClientMock.getCalled).To(BeTrue())
 	})
 })

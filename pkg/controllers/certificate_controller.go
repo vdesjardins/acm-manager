@@ -21,8 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	clientv1alpha1 "vdesjardins/acm-manager/pkg/clientset/v1alpha1"
+	"vdesjardins/acm-manager/pkg/controllers/external_api_clients"
 
 	certac "vdesjardins/acm-manager/pkg/client/applyconfiguration/acmmanager/v1alpha1"
 
@@ -48,43 +47,6 @@ import (
 	certificatev1alpha1 "vdesjardins/acm-manager/pkg/apis/acmmanager/v1alpha1"
 	certificateclient "vdesjardins/acm-manager/pkg/client/versioned"
 )
-
-// ACM interface for testing
-type acmAPI interface {
-	DescribeCertificate(ctx context.Context, params *acm.DescribeCertificateInput, optFns ...func(*acm.Options)) (*acm.DescribeCertificateOutput, error)
-	RequestCertificate(ctx context.Context, params *acm.RequestCertificateInput, optFns ...func(*acm.Options)) (*acm.RequestCertificateOutput, error)
-	DeleteCertificate(ctx context.Context, params *acm.DeleteCertificateInput, optFns ...func(*acm.Options)) (*acm.DeleteCertificateOutput, error)
-	ListCertificates(ctx context.Context, params *acm.ListCertificatesInput, optFns ...func(*acm.Options)) (*acm.ListCertificatesOutput, error)
-	ListTagsForCertificate(ctx context.Context, params *acm.ListTagsForCertificateInput, optFns ...func(*acm.Options)) (*acm.ListTagsForCertificateOutput, error)
-}
-
-type acmClient struct {
-	svc *acm.Client
-}
-
-var newAcmClient = func(service *acm.Client) acmAPI {
-	return &acmClient{svc: service}
-}
-
-func (a *acmClient) DescribeCertificate(ctx context.Context, params *acm.DescribeCertificateInput, optFns ...func(*acm.Options)) (*acm.DescribeCertificateOutput, error) {
-	return a.svc.DescribeCertificate(ctx, params, optFns...)
-}
-
-func (a *acmClient) RequestCertificate(ctx context.Context, params *acm.RequestCertificateInput, optFns ...func(*acm.Options)) (*acm.RequestCertificateOutput, error) {
-	return a.svc.RequestCertificate(ctx, params, optFns...)
-}
-
-func (a *acmClient) DeleteCertificate(ctx context.Context, params *acm.DeleteCertificateInput, optFns ...func(*acm.Options)) (*acm.DeleteCertificateOutput, error) {
-	return a.svc.DeleteCertificate(ctx, params, optFns...)
-}
-
-func (a *acmClient) ListCertificates(ctx context.Context, params *acm.ListCertificatesInput, optFns ...func(*acm.Options)) (*acm.ListCertificatesOutput, error) {
-	return a.svc.ListCertificates(ctx, params)
-}
-
-func (a *acmClient) ListTagsForCertificate(ctx context.Context, params *acm.ListTagsForCertificateInput, optFns ...func(*acm.Options)) (*acm.ListTagsForCertificateOutput, error) {
-	return a.svc.ListTagsForCertificate(ctx, params)
-}
 
 var (
 	ACMManagerOwnerName           = "acm-manager"
@@ -112,7 +74,7 @@ type CertificateReconciler struct {
 	client.Client
 	certClient certificateclient.Interface
 	Scheme     *runtime.Scheme
-	svc        acmAPI
+	svc        external_api_clients.AcmAWSAPI
 	recorder   record.EventRecorder
 }
 
@@ -306,7 +268,7 @@ func (r *CertificateReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err != nil {
 		return err
 	}
-	r.svc = newAcmClient(acm.NewFromConfig(cfg))
+	r.svc = external_api_clients.NewAcmClient(acm.NewFromConfig(cfg))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&certificatev1alpha1.Certificate{}).
@@ -589,18 +551,9 @@ func cleanupOrphanACMCertificates() {
 		log.Error(err, "unable to load config")
 		return
 	}
-	acmClient := newAcmClient(acm.NewFromConfig(cfg))
+	acmClient := external_api_clients.NewAcmClient(acm.NewFromConfig(cfg))
 
-	clientConfig, err := ctrl.GetConfig()
-	if err != nil {
-		log.Error(err, "unable to read kube config")
-		return
-	}
-	certClient, err := clientv1alpha1.NewForConfig(clientConfig)
-	if err != nil {
-		log.Error(err, "unable to create certificate client")
-		return
-	}
+	certClient, err := external_api_clients.NewCertificateRestClient(ctx)
 
 	input := &acm.ListCertificatesInput{
 		// MaxItems:            new(int32),
@@ -632,7 +585,7 @@ func cleanupOrphanACMCertificates() {
 			continue
 		}
 
-		_, err = certClient.Certificates(tags[TagCertificateNamespace]).Get(ctx, tags[TagCertificateName], metav1.GetOptions{})
+		_, err = certClient.GetCertificateForNamespace(ctx, tags[TagCertificateNamespace], tags[TagCertificateName], metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				if _, err := acmClient.DeleteCertificate(ctx, &acm.DeleteCertificateInput{
