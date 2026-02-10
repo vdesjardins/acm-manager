@@ -2,6 +2,18 @@ apiVersion: v1
 entries:
   acm-manager:
   - apiVersion: v2
+    appVersion: 0.0.18
+    created: "2026-02-10T20:49:23.786259773Z"
+    description: A Helm chart for Kubernetes
+    digest: 6ff875b08770049b1ef1217a136f97a4e6f808891007b91a099f5efb2b23264b
+    maintainers:
+    - name: vdesjardins
+    name: acm-manager
+    type: application
+    urls:
+    - https://vdesjardins.github.io/acm-manager/acm-manager-0.0.18.tgz
+    version: 0.0.18
+  - apiVersion: v2
     appVersion: 0.0.17
     created: "2025-10-02T12:24:13.581689505Z"
     description: A Helm chart for Kubernetes
@@ -157,4 +169,4 @@ entries:
     urls:
     - https://github.com/vdesjardins/acm-manager/releases/download/acm-manager-0.0.2/acm-manager-0.0.2.tgz
     version: 0.0.2
-generated: "2025-10-02T12:24:13.581130591Z"
+generated: "2026-02-10T20:49:23.785347408Z"
