@@ -187,6 +187,73 @@ An example of policy to use that will give required access to ACM:
 }
 ```
 
+## Prometheus Metrics
+
+The controller exposes custom Prometheus metrics on the metrics endpoint (`:8080/metrics`). These are automatically scraped if you have the PodMonitor or ServiceMonitor deployed (included in the Helm chart with `prometheus.enabled: true`).
+
+### Available Metrics
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `acm_certificate_status` | Gauge | name, namespace, common_name, status | Set to 1 for the certificate's current status, 0 for all others. |
+| `acm_certificate_expiry_time_seconds` | Gauge | name, namespace, common_name | Certificate expiry (NotAfter) as Unix timestamp in seconds. |
+| `acm_certificate_request_errors_total` | Counter | name, namespace, operation | Total errors during ACM operations (request, describe, compare, update, cleanup). |
+| `acm_certificate_status_transitions_total` | Counter | name, namespace, from_status, to_status | Total number of certificate status transitions. |
+
+### Possible Status Values
+
+`Requested`, `PendingValidation`, `Issued`, `Inactive`, `Expired`, `ValidationTimedOut`, `Revoked`, `Failed`, `Unknown`, `Error`
+
+### Example Alert Rules
+
+```yaml
+groups:
+  - name: acm-manager
+    rules:
+      # Certificate not in Issued state for more than 30 minutes
+      - alert: ACMCertificateNotIssued
+        expr: acm_certificate_status{status!="Issued"} == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ACM certificate {{ $labels.name }} in namespace {{ $labels.namespace }} is in {{ $labels.status }} state"
+
+      # Certificate expires in less than 7 days
+      - alert: ACMCertificateExpiringSoon
+        expr: (acm_certificate_expiry_time_seconds - time()) < 7 * 24 * 3600
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ACM certificate {{ $labels.name }} in namespace {{ $labels.namespace }} expires in less than 7 days"
+
+      # Recurring errors on certificate operations
+      - alert: ACMCertificateErrors
+        expr: rate(acm_certificate_request_errors_total[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ACM certificate {{ $labels.name }} in namespace {{ $labels.namespace }} has recurring {{ $labels.operation }} errors"
+```
+
+### Example PromQL Queries
+
+```promql
+# List all certificates not in Issued state
+acm_certificate_status{status!="Issued"} == 1
+
+# Time until certificate expiry (in days)
+(acm_certificate_expiry_time_seconds - time()) / 86400
+
+# Error rate per certificate over 5 minutes
+rate(acm_certificate_request_errors_total[5m])
+
+# Count status transitions (detect flapping)
+increase(acm_certificate_status_transitions_total[1h])
+```
+
 ## Installation
 
 To install acm-manager using Helm:
