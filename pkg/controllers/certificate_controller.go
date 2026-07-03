@@ -132,6 +132,9 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			}
 		}
 
+		// Clean up Prometheus metrics for deleted certificate
+		DeleteCertificateMetrics(certificate.Name, certificate.Namespace)
+
 		// Stop reconciliation as the item is being deleted
 		return ctrl.Result{}, nil
 	}
@@ -142,7 +145,9 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if err := r.requestACMCertificate(ctx, certificate); err != nil {
 			log.Error(err, "unable to request certificate")
 			r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventRequestError, err.Error())
+			RecordCertificateError(certificate.Name, certificate.Namespace, "request")
 			certificate.Status.Status = certificatev1alpha1.CertificateStatusError
+			RecordCertificateStatus(certificate.Name, certificate.Namespace, certificate.Spec.CommonName, certificatev1alpha1.CertificateStatusError)
 			if err := r.updateWithStatus(ctx, certificate); err != nil {
 				log.Error(err, "unable to update status")
 			}
@@ -155,6 +160,7 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if err != nil {
 			log.Error(err, "unable to update ACM certificate")
 			r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventCompareError, err.Error())
+			RecordCertificateError(certificate.Name, certificate.Namespace, "compare")
 			return ctrl.Result{}, err
 		}
 		if !equals {
@@ -163,7 +169,9 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			if err := r.requestACMCertificate(ctx, certificate); err != nil {
 				log.Error(err, "unable to request certificate")
 				r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventRequestError, err.Error())
+				RecordCertificateError(certificate.Name, certificate.Namespace, "request")
 				certificate.Status.Status = certificatev1alpha1.CertificateStatusError
+				RecordCertificateStatus(certificate.Name, certificate.Namespace, certificate.Spec.CommonName, certificatev1alpha1.CertificateStatusError)
 				if err := r.updateWithStatus(ctx, certificate); err != nil {
 					log.Error(err, "unable to update status")
 				}
@@ -179,6 +187,7 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.updateWithStatus(ctx, certificate); err != nil {
 		log.Error(err, "unable to update certificate resource status")
 		r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventUpdateError, err.Error())
+		RecordCertificateError(certificate.Name, certificate.Namespace, "update")
 		if certificateCreated {
 			r.deleteACMCertificate(ctx, certificate)
 		}
@@ -186,20 +195,30 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// update certificate information from ACM if available
+	oldStatus := certificate.Status.Status
 	requeue, err := r.updateCertificateInfo(ctx, certificate)
 	if err != nil {
 		log.Error(err, "unable to update certificate info")
 		r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventUpdateError, err.Error())
+		RecordCertificateError(certificate.Name, certificate.Namespace, "describe")
 		if certificateCreated {
 			r.deleteACMCertificate(ctx, certificate)
 		}
 		return ctrl.Result{}, err
 	}
 
+	// Record Prometheus metrics after successful status update
+	RecordCertificateStatus(certificate.Name, certificate.Namespace, certificate.Spec.CommonName, certificate.Status.Status)
+	if certificate.Status.NotAfter != nil {
+		RecordCertificateExpiry(certificate.Name, certificate.Namespace, certificate.Spec.CommonName, certificate.Status.NotAfter.Time)
+	}
+	RecordStatusTransition(certificate.Name, certificate.Namespace, oldStatus, certificate.Status.Status)
+
 	// save status state
 	if err := r.updateWithStatus(ctx, certificate); err != nil {
 		log.Error(err, "unable to update certificate resource status")
 		r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventUpdateError, err.Error())
+		RecordCertificateError(certificate.Name, certificate.Namespace, "update")
 		if certificateCreated {
 			r.deleteACMCertificate(ctx, certificate)
 		}
@@ -218,6 +237,7 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.syncDNSEndpoints(ctx, certificate); err != nil {
 		log.Error(err, "error synching DNS endpoints")
 		r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventUpdateError, err.Error())
+		RecordCertificateError(certificate.Name, certificate.Namespace, "update")
 		return ctrl.Result{}, err
 	}
 
@@ -235,6 +255,7 @@ func (r *CertificateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	nbCleanedUp, err := r.cleanupACMCertificates(ctx, certificate)
 	if err != nil {
 		log.Error(err, "error cleaning up old certificate")
+		RecordCertificateError(certificate.Name, certificate.Namespace, "cleanup")
 		var ae smithy.APIError
 		if errors.As(err, &ae) {
 			r.recorder.Event(certificate, core.EventTypeWarning, CertificateEventCleanupError, ae.ErrorCode())
