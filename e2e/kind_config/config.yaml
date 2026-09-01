@@ -9,7 +9,7 @@ containerdConfigPatches:
       config_path = "/etc/containerd/certs.d"
 nodes:
   - role: control-plane
-    image: "kindest/node:v1.35.0"
+    image: "kindest/node:v1.36.4"
     kubeadmConfigPatches:
       - |
         kind: ClusterConfiguration

@@ -1,7 +1,7 @@
 # Image URL to use all building/pushing image targets
 IMG ?= docker.io/vdesjardins/acm-manager:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.35.0
+ENVTEST_K8S_VERSION = 1.36.2
 
 ## Tool Binaries
 KUBECTL ?= kubectl
@@ -215,7 +215,8 @@ kustomize: ## Verify kustomize is available via nix
 	@echo "✅ kustomize is ready"
 
 K8S_CLUSTER_NAME := acm-manager
-CERT_MANAGER_VERSION ?= 1.16.2
+CERT_MANAGER_VERSION ?= v1.21.1
+EXTERNAL_DNS_VERSION ?= 1.21.1
 
 REGISTRY_NAME := "kind-registry"
 REGISTRY_PORT := 5000
@@ -285,7 +286,7 @@ deploy-external-dns: ## Deploy external-dns
 	@if ! $(HELM) upgrade --install external-dns external-dns/external-dns \
 		--namespace external-dns \
 		--create-namespace \
-		--version v1.20.0 \
+		--version ${EXTERNAL_DNS_VERSION} \
 		--set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="arn:aws:iam::$(AWS_ACCOUNT):role/external-dns" \
 		--set sources="{ingress,service,crd}" \
 		--kubeconfig=${TEST_KUBECONFIG_LOCATION} \
@@ -547,7 +548,7 @@ deploy-cert-manager: ## Deploy cert-manager to the K8s cluster
 	@if ! $(HELM) upgrade --install cert-manager jetstack/cert-manager \
 		--namespace cert-manager \
 		--create-namespace \
-		--version v1.20.2 \
+		--version ${CERT_MANAGER_VERSION} \
 		--set crds.enabled=true \
 		--kubeconfig=${TEST_KUBECONFIG_LOCATION} \
 		--wait --timeout=180s; then \
