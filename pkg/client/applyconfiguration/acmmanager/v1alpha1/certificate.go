@@ -29,7 +29,7 @@ import (
 //
 // Certificate is the Schema for the certificates API
 type CertificateApplyConfiguration struct {
-	v1.TypeMetaApplyConfiguration    `json:",inline"`
+	v1.TypeMetaApplyConfiguration    `json:""`
 	*v1.ObjectMetaApplyConfiguration `json:"metadata,omitempty"`
 	Spec                             *CertificateSpecApplyConfiguration   `json:"spec,omitempty"`
 	Status                           *CertificateStatusApplyConfiguration `json:"status,omitempty"`

@@ -215,8 +215,8 @@ kustomize: ## Verify kustomize is available via nix
 	@echo "✅ kustomize is ready"
 
 K8S_CLUSTER_NAME := acm-manager
-CERT_MANAGER_VERSION ?= v1.21.1
-EXTERNAL_DNS_VERSION ?= 1.21.1
+CERT_MANAGER_VERSION ?= v1.21.3
+EXTERNAL_DNS_VERSION ?= 1.24.0
 
 REGISTRY_NAME := "kind-registry"
 REGISTRY_PORT := 5000
