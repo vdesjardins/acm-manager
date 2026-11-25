@@ -1,32 +1,32 @@
 final: prev: {
   devShell = final.callPackage ./dev.nix {};
-  go = prev.go_1_26.overrideAttrs (old: {
-    version = "1.26.7";
+  go = prev.go_1_27.overrideAttrs (old: {
+    version = "1.27.4";
     src = final.fetchurl {
-      url = "https://go.dev/dl/go1.26.7.src.tar.gz";
-      hash = "sha256-DtJOrHVRBQhbif6cq8J0K5GgrXuUtZ0602SRjryJVq0=";
+      url = "https://go.dev/dl/go1.27.4.src.tar.gz";
+      hash = "sha256-c8+4VxrsDAEXdofbhxY9Rqog6XeWcncokaoXZU2aYJk=";
     };
   });
 
   kubernetes-code-generator = prev.kubernetes-code-generator.overrideAttrs (old: rec {
-    version = "0.36.4";
+    version = "0.37.2";
     src = prev.fetchFromGitHub {
       owner = "kubernetes";
       repo = "code-generator";
       tag = "v${version}";
-      hash = "sha256-nvE8SYEJuIMo5CcY/l9HUQiU8OQfb2+7CfhUlq3W0sA=";
+      hash = "sha256-5c72/ySGNA1FtU0LVn4GyFvkIMUfD/FRtBgG5QrLqK4=";
     };
-    vendorHash = "sha256-Ahj8sV4o8XxuRipsxtPVdY1Nkvm7T1uSHzRnq26Qo1Y=";
+    vendorHash = "sha256-ZeeY4CLIwZ77pKK2yX2LoE83ij4Sp0Bs2u3xTIZOHsg=";
   });
 
   kubernetes-controller-tools = prev.kubernetes-controller-tools.overrideAttrs (old: rec {
-    version = "0.21.0";
+    version = "0.23.0";
     src = prev.fetchFromGitHub {
       owner = "kubernetes-sigs";
       repo = "controller-tools";
       tag = "v${version}";
-      hash = "sha256-4IkVnD87/sHZKixDaF9Qz95cdChPfOkEowBQwu7kq9Y=";
+      hash = "sha256-BvFMLjxC5iZk9gmTgMA6ZFBHXwGzi35sz63uVB0A+xs=";
     };
-    vendorHash = "sha256-LNjd0PDVa4GMY1rFJ5PFiWAEeA5MMraIIzZmYgkdgJc=";
+    vendorHash = "sha256-eGp5KRangcOwvAEFDJrKBFZGLqB4tqK2AiltFlG4hM0=";
   });
 }
